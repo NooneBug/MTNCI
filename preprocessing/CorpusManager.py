@@ -3,6 +3,7 @@ from tqdm import tqdm
 from collections import defaultdict
 import re
 import time
+import random
 
 class CorpusManager():
     corpus = []
@@ -13,11 +14,11 @@ class CorpusManager():
     joined_corpus = []   
 
 
-    def read_corpus(self, PATH):
+    def read_corpus(self, PATH, length = 5000000):
         with open(PATH, 'r') as inp:
             ll = inp.readlines()
             print('read input corpus')
-            for l in tqdm(ll):
+            for l in tqdm(ll[:length]):
                 l = l.replace('\n', '')
                 l = l.replace('  ', ' ')
                 if len(l) > 0:
@@ -39,10 +40,20 @@ class CorpusManager():
     #                 self.vocab[s] = 1
     #     self.vocab = list(self.vocab.keys())
 
-    def create_all_entities(self, entity_dict):
-        self.all_entities = [w for li in entity_dict.values() for w in li]
+    def create_all_entities(self, entity_dict, concepts = None):
+        """
+        create a list of all entities names about concepts in the concepts variable
+        if concept is None, create all entities names about all concepts
+        :param 
+            entity_dict: the entity dict returned from the method self.entities_from_types
+            concepts: a list of concepts
+        """
+        if not concepts:
+            concepts = list(entity_dict.keys())
+        self.all_entities = [w for k, li in entity_dict.items() for w in li if k in concepts]
+        random.shuffle(self.all_entities)
 
-    def parallel_find(self, n_proc, n_entities = None):
+    def parallel_find(self, n_proc, n_entities = None, clean = True):
         
         if not n_entities:
             n_entities = len(self.all_entities)        
@@ -50,25 +61,30 @@ class CorpusManager():
 
         # self.pbar = tqdm(total=5)
 
-        p = Pool(n_proc)
         t = time.time()
-        index_list = p.imap(self.create_word_occurrence_index, self.all_entities[0:50])
-        print('{} processes, 5000 entities, {:.2f} seconds'.format(n_proc, time.time() - t))
-        return index_list
+        p = Pool(n_proc)
+        print('start indexing')
+        es = self.all_entities[0:n_entities]
+        if clean:
+            index_list = [x for x in p.imap(self.create_word_occurrence_index, es) if x]
+        else:
+            index_list = [x for x in p.imap(self.create_word_occurrence_index, es)]
+        return index_list, n_proc, n_entities, len(self.corpus), t
 
     def create_word_occurrence_index(self, e):
-        # self.pbar.update(1)
-        return {e: [(i, [m.start() for m in re.finditer(e, jo_c)]) for i, jo_c in enumerate(self.joined_corpus) if jo_c.find(e) != -1]}
-        
-        # words_to_search = set([e for k, es in self.concept_entities_unique.items() for e in es[0]])
-        
-        # for sentence in tqdm(self.corpus[:500]):
-        #     common = words_to_search.intersection(sentence)
-        #     indexes = [(x, i) for x in common for i, s in enumerate(sentence) if s == x]
-        #     self.word_occurrence_index.append(indexes)
+        """
+        loop on all the corpus and use re.finditer to return the index of all occurrences of the entity e
+        :param 
+            e: an entity name
+        :return: a dict with the structure: {entity_name: list of tuples (row: [occurrences in row])}
+        """
+        key = e
+        value = [(i, [m.start() for m in re.finditer(e, jo_c)]) for i, jo_c in enumerate(self.joined_corpus) if jo_c.find(e) != -1]
+        if value:
+            return {key: value}
 
     def clean_occurrences(self, list_of_indexes):
-        return [{k:v} for k,v in list_of_indexes.items() if v]
+        return [{k:v} for L in list_of_indexes for k,v in L.items() if v]
 
     # def check_words(self, entity_dict):
         # for concept, entities in tqdm(entity_dict.items()):

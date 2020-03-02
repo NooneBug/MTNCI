@@ -145,11 +145,13 @@ class EntityNameRetriever():
 
         return entity_dict
 
-    def entity_name_preprocessing(self, entity_dict):
+    def entity_name_preprocessing(self, entity_dict, max_words = None):
         """
         clean the entity names
         :param 
             entity_dict: the entity dict returned from the method self.entities_from_types
+            max_words: number of maximum words allowed, 
+                i.e., entity names composed of more than max_words are filtered out
         :return: a dict with the same format of the entity_dict but with entity names cleaned
         """
 
@@ -158,7 +160,8 @@ class EntityNameRetriever():
         for k, values in entity_dict.items():
             for v in values:
                 v = self.preprocess(v)
-                cleaned_entity_dict[k].append(v)
+                if max_words and len(v.split(' ')) <= max_words:
+                    cleaned_entity_dict[k].append(v)
         return cleaned_entity_dict
 
         

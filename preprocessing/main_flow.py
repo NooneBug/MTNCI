@@ -8,7 +8,7 @@ from utils import save_data_with_pickle, load_data_with_pickle
 import time
 
 # List of classes used to test the correctness of the workflow
-list_of_classes = ['dbo:City', 'dbo:Mosque', 'dbo:Animal']
+LIST_OF_CLASSES = ['City', 'Mosque', 'Animal']
 # PATH in which utility files are stored
 PICKLES_PATH = '../../source_files/pickles/'
 
@@ -62,8 +62,6 @@ if __name__ == "__main__":
     # Read a corpus, search the occurrences of the entity in the corpus, 
     # returns a dict in format {"entity_name": [list of tuples: (row, entity_name_occurrence_index)]}
 
-    c = CorpusManager()
-    c.read_corpus(CORPUS_PATH)
     # try:
     #     # 1/0
     #     print('load corpus...')
@@ -80,31 +78,43 @@ if __name__ == "__main__":
     #     # save_data_with_pickle(PICKLES_PATH + 'vocab', c.vocab)
     #     # save_data_with_pickle(PICKLES_PATH + 'concept_entities', c.concept_entities)
 
-    c.create_all_entities(entity_dict)
     
-    # processes = [5, 6, 7, 8]
-    # entities = [500, 200, 100]
-
-    # for p in processes:
-        # for e in entities:
-    # %%    
-    f = c.parallel_find(n_proc = 5)
-
-    cleaned_occurrences = c.clean_occurrences(f)
-
+    # %%
+    N = [10, 15, 20, 25, 30]
+    ENTITIES = [200]
+    # LINES = [100000, 200000, 300000, 500000, 1000000, 5000000]
+    LINES = [100]
+    with open('log.txt', 'a') as out:
+            out.write('\n\n')
+    for l in LINES:
+        c = CorpusManager()
+        c.read_corpus(CORPUS_PATH, l)
+        c.create_all_entities(entity_dict, concepts=list_of_classes)
+        
+        for e in ENTITIES:
+            for n in N:
+                f, n_proc, n_entities, leng, t = c.parallel_find(n_proc = n, n_entities= e)
+                t2 = time.time()
+                print('{:2} processes, {:5} entities, {} lines, {:8.2f} seconds'.format(n_proc, 
+                                                                                n_entities, 
+                                                                                leng,
+                                                                                t2 - t
+                                                                                ))
+                
+                with open('log.txt', 'a') as out:
+                    out.write('{:2} processes, {:5} entities, {} lines, {:8.2f} seconds\n'.format(n_proc, 
+                                                                                n_entities, 
+                                                                                leng,
+                                                                                t2 - t
+                                                                                ))
+        
+        with open('log.txt', 'a') as out:
+            out.write('\n')
+                
+                
+    t = time.time()
+    print('{} entities found'.format(len(f)))
     
-    # save_data_with_pickle(PICKLES_PATH + 'word_occurrence_index', c.word_occurrence_index)
-    for ff in f:
-        print(ff)
-    # save_data_with_pickle(PICKLES_PATH + 'word_indexes_to_rebuild', f)
-    
-    # c.create_word_to_index()
-    # t = time.time()    
-    # result, slices = c.parallel_find(5)
-    # print(round(time.time() - t, 2))
-    # c.find()
-    # save_data_with_pickle(PICKLES_PATH + 'result', result)
-    # save_data_with_pickle(PICKLES_PATH + 'slices', slices)
 
 
 # %%
