@@ -7,10 +7,14 @@ import pickle
 from utils import save_data_with_pickle, load_data_with_pickle
 import time
 
+# List of classes used to test the correctness of the workflow
 list_of_classes = ['dbo:City', 'dbo:Mosque', 'dbo:Animal']
+# PATH in which utility files are stored
 PICKLES_PATH = '../../source_files/pickles/'
 
+# PATH that refers to the file which let the building of the Ontology Graph
 PATH_TO_EDGELIST = PICKLES_PATH + 'dbpedia_edgelist_no_closure.tsv'
+# PATH to the corpus from which information are extracted
 CORPUS_PATH = '/datahdd/vmanuel/ELMo/Corpora/shuffled_text_with_words'
 
 
@@ -19,16 +23,21 @@ if __name__ == "__main__":
 
     # %%
 
-    # create the ontology tree
+    # General design: if a resource is already built (in a previous iteration) load it, elsewhere build it and save it (for the future)
+
+    # Create the ontology tree
     try:
         G = load_data_with_pickle(PICKLES_PATH + 'graph')
     except:
         G = graph_from_edgelist(PATH_TO_EDGELIST)
         save_data_with_pickle(PICKLES_PATH + 'graph', G)
 
+    # Check if the built graph is a tree (it should be a tree because we need to use an Ontology Tree)
     print("the input graph is a tree: {}".format(nx.is_tree(G)))
-    # # %%
     
+    # %%
+    
+    # retrieve the ontology classes from the graph
     list_of_classes = [n for n in G.nodes()]
 
     # retrieve entities names
@@ -41,15 +50,17 @@ if __name__ == "__main__":
         entity_dict = e.entity_name_preprocessing(entity_dict)
         save_data_with_pickle(PICKLES_PATH + 'entity_dict', entity_dict)
 
-    save_data_with_pickle(PICKLES_PATH + 'entity_dict', entity_dict)
-    
+    # %%
     # exclude from the tree the concepts which have no entities (only if the concept is a leaf or have all empty sons)
     void_types = [t for t, v in entity_dict.items() if v == []]
 
-    # # %%
     pruned_G = remove_void_types(G, void_types)
     print("the pruned graph is a tree: {}".format(nx.is_tree(pruned_G)))
 
+    # %%
+
+    # Read a corpus, search the occurrences of the entity in the corpus, 
+    # returns a dict in format {"entity_name": [list of tuples: (row, entity_name_occurrence_index)]}
 
     c = CorpusManager()
     c.read_corpus(CORPUS_PATH)
@@ -71,14 +82,22 @@ if __name__ == "__main__":
 
     c.create_all_entities(entity_dict)
     
-    processes = [5, 6, 7, 8]
-    entities = [100, 200, 500]
+    # processes = [5, 6, 7, 8]
+    # entities = [500, 200, 100]
 
-    for p in processes:
-        for e in entities:
-            f = c.parallel_find(n_proc = 6, n_entities= e)
+    # for p in processes:
+        # for e in entities:
+    # %%    
+    f = c.parallel_find(n_proc = 5)
+
+    cleaned_occurrences = c.clean_occurrences(f)
+
+    
     # save_data_with_pickle(PICKLES_PATH + 'word_occurrence_index', c.word_occurrence_index)
+    for ff in f:
+        print(ff)
     # save_data_with_pickle(PICKLES_PATH + 'word_indexes_to_rebuild', f)
+    
     # c.create_word_to_index()
     # t = time.time()    
     # result, slices = c.parallel_find(5)

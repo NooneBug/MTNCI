@@ -5,18 +5,18 @@ import re
 import time
 
 class CorpusManager():
-
     corpus = []
     vocab = {}
     word_occurrence_index = {}
     concept_entities_unique = {}
     all_entities = []
-    joined_corpus = []
-        
+    joined_corpus = []   
+
 
     def read_corpus(self, PATH):
         with open(PATH, 'r') as inp:
             ll = inp.readlines()
+            print('read input corpus')
             for l in tqdm(ll):
                 l = l.replace('\n', '')
                 l = l.replace('  ', ' ')
@@ -26,32 +26,38 @@ class CorpusManager():
 
         # self.create_vocab()
     
-    def create_vocab(self):
-        """
-        create the vocabulary of the corpus 
-        :param  :
-        :return :
-        """
-        print('building vocab')
-        for sentence in tqdm(self.corpus):
-            for s in set(sentence):
-                if len(s) > 2:
-                    self.vocab[s] = 1
-        self.vocab = list(self.vocab.keys())
+    # def create_vocab(self):
+    #     """
+    #     create the vocabulary of the corpus 
+    #     :param  :
+    #     :return :
+    #     """
+    #     print('building vocab')
+    #     for sentence in tqdm(self.corpus):
+    #         for s in set(sentence):
+    #             if len(s) > 2:
+    #                 self.vocab[s] = 1
+    #     self.vocab = list(self.vocab.keys())
 
     def create_all_entities(self, entity_dict):
         self.all_entities = [w for li in entity_dict.values() for w in li]
 
-    def parallel_find(self, n_proc, n_entities):
+    def parallel_find(self, n_proc, n_entities = None):
         
-        offset = 10000
+        if not n_entities:
+            n_entities = len(self.all_entities)        
+        # offset = 10000
+
+        # self.pbar = tqdm(total=5)
+
         p = Pool(n_proc)
         t = time.time()
-        index_list = p.map(self.create_word_occurrence_index, self.all_entities[offset:offset + n_entities])
-        print('{} processes, {} entities, {:.2f} seconds'.format(n_proc, n_entities, time.time() - t))
+        index_list = p.imap(self.create_word_occurrence_index, self.all_entities[0:50])
+        print('{} processes, 5000 entities, {:.2f} seconds'.format(n_proc, time.time() - t))
         return index_list
 
     def create_word_occurrence_index(self, e):
+        # self.pbar.update(1)
         return {e: [(i, [m.start() for m in re.finditer(e, jo_c)]) for i, jo_c in enumerate(self.joined_corpus) if jo_c.find(e) != -1]}
         
         # words_to_search = set([e for k, es in self.concept_entities_unique.items() for e in es[0]])
@@ -61,7 +67,8 @@ class CorpusManager():
         #     indexes = [(x, i) for x in common for i, s in enumerate(sentence) if s == x]
         #     self.word_occurrence_index.append(indexes)
 
-
+    def clean_occurrences(self, list_of_indexes):
+        return [{k:v} for k,v in list_of_indexes.items() if v]
 
     # def check_words(self, entity_dict):
         # for concept, entities in tqdm(entity_dict.items()):

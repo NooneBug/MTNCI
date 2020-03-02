@@ -119,12 +119,12 @@ class EntityNameRetriever():
         check how much entities can be retrieved, 
             if the number is higher than 10k (dbpedia limit) calls a query that returns 
                 the first 10k entities ranked with pagerank, 
-            elsewhere return the retrieved entities
+            elsewhere returns the retrieved entities
         entities are retrieved via another query
 
         :param  
             typelist: a list of dbpedia classes (e.g., ['dbo:City', 'dbo:Animal'])
-        :return: dict which is {type: list_of_entities} 
+        :return: dict which is formatted as: {type: list_of_entities} 
         """
 
         entity_dict = {}
@@ -146,6 +146,13 @@ class EntityNameRetriever():
         return entity_dict
 
     def entity_name_preprocessing(self, entity_dict):
+        """
+        clean the entity names
+        :param 
+            entity_dict: the entity dict returned from the method self.entities_from_types
+        :return: a dict with the same format of the entity_dict but with entity names cleaned
+        """
+
         cleaned_entity_dict = {k:[] for k in entity_dict.keys()}
 
         for k, values in entity_dict.items():
@@ -156,6 +163,14 @@ class EntityNameRetriever():
 
         
     def preprocess(self, stri):
+
+        """
+        define a pipeline which clean a string, 
+        :param
+            stri: the string to be cleaned 
+        :return: the cleaned string
+        """
+
         stri = stri.lower()
         stri = gensim.utils.deaccent(stri)
         stri = ' '.join(stri.split('-'))

@@ -2,13 +2,21 @@ import networkx as nx
 
 
 def graph_from_edgelist(path):
+    
+    """
+    Build a graph starting from an edgelist which, for each row, have this format: <edge1><whitespace><edge2>\n, 
+    a networkx graph is returned
+    :param 
+        path: the path to the edgelist
+    :return: the built graph
+    """
+
     G = nx.DiGraph()
     with open(path, 'r') as inp:
         lines = inp.readlines()
         lines = [l.replace('\n', '') for l in lines]
         for line in lines:
             nodes = line.split(' ')
-
             for node in nodes:
                 if not node in G.nodes():
                     G.add_node(node)
