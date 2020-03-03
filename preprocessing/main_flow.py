@@ -9,7 +9,7 @@ import time
 import random
 
 # List of classes used to test the correctness of the workflow
-LIST_OF_CLASSES = ['City', 'Mosque', 'Animal']
+# LIST_OF_CLASSES = ['City', 'Mosque', 'Animal']
 # PATH in which utility files are stored
 PICKLES_PATH = '../../source_files/pickles/'
 
@@ -18,6 +18,7 @@ PATH_TO_EDGELIST = PICKLES_PATH + 'dbpedia_edgelist_no_closure.tsv'
 # PATH to the corpus from which information are extracted
 CORPUS_PATH = '/datahdd/vmanuel/ELMo/Corpora/shuffled_text_with_words'
 
+avoid_multilabeling = True
 
 # %%
 if __name__ == "__main__":
@@ -44,7 +45,7 @@ if __name__ == "__main__":
     # retrieve entities names
     e = EntityNameRetriever()
     
-    FRAC = 0.25 # the time needed for the indexing part (logged) scale linearly with this variable, don't know why
+    FRAC = 0.125 # the time needed for the indexing part (logged) scale linearly with this variable, don't know why
 
     try:
         1/0
@@ -65,27 +66,11 @@ if __name__ == "__main__":
     # Read a corpus, search the occurrences of the entity in the corpus, 
     # returns a dict in format {"entity_name": [list of tuples: (row, entity_name_occurrence_index)]}
 
-    # try:
-    #     # 1/0
-    #     print('load corpus...')
-    #     t = time.time()
-    #     c.corpus = load_data_with_pickle(PICKLES_PATH + 'corpus')
-    #     print('corpus loaded in {} seconds'.format(round(time.time() - t, 2)))
-    #     # print('load vocab...')
-    #     # c.vocab = load_data_with_pickle(PICKLES_PATH + 'vocab')
-    #     # print('load entities...')
-    #     # c.concept_entities = load_data_with_pickle(PICKLES_PATH + 'concept_entities')
-    # except:
-    #     # c.check_words(entity_dict)
-    #     save_data_with_pickle(PICKLES_PATH + 'corpus', c.corpus)
-    #     # save_data_with_pickle(PICKLES_PATH + 'vocab', c.vocab)
-    #     # save_data_with_pickle(PICKLES_PATH + 'concept_entities', c.concept_entities)
-
-    # %%
-    N = [10, 15, 20, 25, 30]
-    ENTITIES = [200]
-    # LINES = [100000, 200000, 300000, 500000, 1000000, 5000000]
+    # N = [10, 15, 20, 25, 30]
+    N = [20]
+    ENTITIES = [1000]
     LINES = [1000]
+    # LINES = [100000, 200000, 300000, 500000, 1000000, 5000000]
     with open('log.txt', 'a') as out:
             out.write('\n\nentities with only two words\n')
     for l in LINES:
@@ -94,7 +79,7 @@ if __name__ == "__main__":
         c.create_all_entities(entity_dict, concepts=list_of_classes)    
         for e in ENTITIES:
             for n in N:
-                f, n_proc, n_entities, leng, t = c.parallel_find(n_proc = n, n_entities= e)
+                word_indexes, n_proc, n_entities, leng, t = c.parallel_find(n_proc = n, n_entities= e)
                 t2 = time.time()
                 print('{:2} processes, {:5} entities, {} lines, {:8.2f} seconds'.format(n_proc, 
                                                                                 n_entities, 
@@ -111,10 +96,20 @@ if __name__ == "__main__":
         
         with open('log.txt', 'a') as out:
             out.write('\n')
-    save_data_with_pickle(PICKLES_PATH + 'word_occurrence_index', f)            
-          
-    # t = time.time()
-    # print('{} entities found'.format(len(f)))
+
+    save_data_with_pickle(PICKLES_PATH + 'word_occurrence_index', word_indexes)            
+
+    print('{} entities found'.format(len(word_indexes.keys())))
+
+    # filter the entity dict maintaining only the entities found in the corpus
+    found_entities = set(word_indexes.keys())
+    found_entity_dict = {k: set(v).intersection(found_entities) for k,v in entity_dict.items() if set(v).intersection(found_entities)}
+    
+    if avoid_multilabeling:
+        found_entity_dict = c.avoid_multilabeling(found_entity_dict, G)
+
+    save_data_with_pickle(PICKLES_PATH + 'found_entity_dict', found_entity_dict)            
+
     
 
 

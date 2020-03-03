@@ -5,6 +5,7 @@ import re
 import time
 import random
 import copy
+import networkx as nx
 
 class CorpusManager():
     corpus = []
@@ -24,7 +25,7 @@ class CorpusManager():
                 l = re.sub(r'[ ]+',' ', l)
                 if len(l) > 0:
                     self.corpus.append(l.split(' '))
-                    self.joined_corpus.append(l)
+                    self.joined_corpus.append(' ' + l + ' ')
 
         # self.create_vocab()
     
@@ -58,20 +59,21 @@ class CorpusManager():
         
         if not n_entities:
             n_entities = len(self.all_entities)        
-        # offset = 10000
-
-        # self.pbar = tqdm(total=5)
 
         t = time.time()
         p = Pool(n_proc)
         print('start indexing')
-        es = copy.deepcopy(self.all_entities[0:n_entities])
+        es = copy.deepcopy(random.sample(self.all_entities, n_entities))
         if clean:
-            index_list = [x for x in p.imap(self.create_word_occurrence_index, es) if x]
+            index_list = [x for x in p.map(self.create_word_occurrence_index, es) if x]
         else:
-            index_list = [x for x in p.imap(self.create_word_occurrence_index, es)]
+            index_list = [x for x in p.map(self.create_word_occurrence_index, es)]
 
-        return index_list, n_proc, n_entities, len(self.corpus), t
+        # rebuild the parallel return
+
+        index_list_dict = {k:v for elem in index_list for k,v in elem.items()}
+
+        return index_list_dict, n_proc, n_entities, len(self.corpus), t
 
     def create_word_occurrence_index(self, e):
         """
@@ -81,83 +83,58 @@ class CorpusManager():
         :return: a dict with the structure: {entity_name: list of tuples (row: [occurrences in row])}
         """
         key = e
-        value = [(i, [m.start() for m in re.finditer(e, jo_c)]) for i, jo_c in enumerate(self.joined_corpus) if jo_c.find(e) != -1]
+        value = [(i, [m.start() for m in re.finditer(' ' + e + ' ', jo_c)]) for i, jo_c in enumerate(self.joined_corpus) if jo_c.find(' ' + e + ' ') != -1]
         if value:
             return {key: value}
 
     def clean_occurrences(self, list_of_indexes):
         return [{k:v} for L in list_of_indexes for k,v in L.items() if v]
 
-    # def check_words(self, entity_dict):
-        # for concept, entities in tqdm(entity_dict.items()):
+    def avoid_multilabeling(self, entity_dict, G):
+        reverse_dict = defaultdict(list)
 
-            # single = [e for e in entities if len(e.split(' ')) == 1]
-            # phrases = [e for e in entities if len(e.split(' ')) > 1]
-            # phrases = [s for e in phrases for s in e.split(' ')]
-            
-            # single.extend(phrases)
+        for k, words in entity_dict.items():
+            for w in words:
+                reverse_dict[w].append(k)
+        i = 0
+        for r in reverse_dict.values():
+            if len(set(r)) > 1 :
+                i += 1
 
-            # self.concept_entities_unique[concept] = [set(single).intersection(set(self.vocab))]
-            
-            # for e in tqdm(entities):
-            #     if ' ' in e:
-            #         splitted = e.split(' ')
-            #         if all(ss in self.vocab for ss in splitted):
-            #             try:
-            #                 self.concept_entities[concept].append(e)
-            #             except:
-            #                 self.concept_entities[concept] = [e]
-            #     elif e in self.vocab:
-            #         try:
-            #             self.concept_entities[concept].append(e)
-            #         except:
-            #             self.concept_entities[concept] = [e]
+        print('Multilabel alerts: {}'.format(i))
 
+        for k, v in reverse_dict.items():
+            if len(set(v)) > 1:
+                min_dist = 100
+                for clas in v:
+                    d = nx.shortest_path_length(G, 'Thing', clas)
+                    if d < min_dist:
+                        min_dist = d
+                        min_k = clas.lower()
+                    if d == min_dist:
+                        x = random.random()
+                        if x > 0.5:
+                            min_dist = d
+                            min_k = clas.lower()
+                for clas in v:
+                    if clas != min_k:
+                        print('remove {} from {}'.format(k, clas))
+                        entity_dict[clas].remove(k)
 
-    # def create_word_to_index(self):
-    #     self.word_to_index = []
-    #     for k, sublist in self.concept_entities.items():
-    #         for v in sublist:
-    #             if ' ' in v:
-    #                 for sp in v.split(' '):
-    #                     self.word_to_index.append(sp)
-    #             else:
-    #                 self.word_to_index.append(v)
-                
+        reverse_dataset = {}
+        for k, words in entity_dict.items():
+            for w in words:
+                try:
+                    reverse_dataset[w].append(k)
+                except:
+                    reverse_dataset[w] = [k]
+        i = 0
+        for r in reverse_dataset.values():
+            if len(set(r)) > 1:
+                i += 1
 
-    # def parallel_find(self, n_proc):
-        
+        print('Multilabel alerts: {}'.format(i))
 
-    #     def divide_chunks(l, n): 
-    #         for i in range(0, len(l), n):
-    #             yield [(i+j, line) for j, line in enumerate(l[i:i + n])]
-        
-     
-    #     p = Pool(n_proc)
-        
-    #     indexes_and_corpus_slices = divide_chunks(self.corpus[:500], n_proc)
+        return entity_dict
 
-    #     print('corpus sliced')
-
-    #     word_indexes = defaultdict(list)
-
-    #     for dictionary in p.imap_unordered(self.find, indexes_and_corpus_slices):
-    #         for k, v in dictionary.items():
-    #             word_indexes[k].extend(v)    
-
-    #     print(word_indexes)
-
-        # return p.map(self.find, indexes_and_corpus_slices)
-
-    # def find(self, corpus):
-    #     w_i = {}
-    #     for K, sentence in corpus:
-    #         for word_i, word in enumerate(sentence):
-    #             if word in self.word_to_index:
-    #                 try:
-    #                     w_i[word].append([K, word_i])
-    #                 except:
-    #                     w_i[word] = [[K, word_i]]
-    #     return w_i  
-
-
+    

@@ -160,7 +160,7 @@ class EntityNameRetriever():
         for k, values in entity_dict.items():
             for v in values:
                 v = self.preprocess(v)
-                if max_words and len(v.split(' ')) <= max_words:
+                if max_words and len(v.split(' ')) <= max_words and v != '':
                     cleaned_entity_dict[k].append(v)
         return cleaned_entity_dict
 
@@ -183,6 +183,7 @@ class EntityNameRetriever():
         stri = re.sub(r'[^\w\s]','', stri)
         stri = re.sub(r'[0-9]+',' ', stri)
         stri = re.sub(r'[ ]+',' ', stri)
+        stri = stri.strip()
 
         return stri
 

@@ -154,3 +154,51 @@ entities with only two words
 25 processes,   200 entities, 1000 lines,    16.96 seconds
 30 processes,   200 entities, 1000 lines,    17.12 seconds
 
+
+
+entities with only two words
+
+
+entities with only two words
+20 processes,   200 entities, 1000 lines,    49.34 seconds
+
+
+
+entities with only two words
+20 processes,   200 entities, 1000 lines,    49.58 seconds
+
+
+
+entities with only two words
+20 processes,  1000 entities, 1000 lines,    80.11 seconds
+
+
+
+entities with only two words
+20 processes,  1000 entities, 1000 lines,   118.35 seconds
+
+
+
+entities with only two words
+20 processes,  1000 entities, 1000 lines,   134.55 seconds
+
+
+
+entities with only two words
+20 processes,  1000 entities, 1000 lines,    81.49 seconds
+
+
+
+entities with only two words
+20 processes,  1000 entities, 1000 lines,   143.39 seconds
+
+
+
+entities with only two words
+20 processes,  1000 entities, 1000 lines,   134.51 seconds
+
+
+
+entities with only two words
+20 processes,  1000 entities, 1000 lines,    11.26 seconds
+
