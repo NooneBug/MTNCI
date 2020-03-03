@@ -15,8 +15,16 @@ class CorpusManager():
     all_entities = []
     joined_corpus = []   
 
+    def __init__(self):
+        self.corpus = []
+        self.vocab = {}
+        self.word_occurrence_index = {}
+        self.concept_entities_unique = {}
+        self.all_entities = []
+        self.joined_corpus = []           
 
     def read_corpus(self, PATH, length = 5000000):
+        self.corpus = []
         with open(PATH, 'r') as inp:
             print('read input corpus')
             ll = inp.readlines()
@@ -63,29 +71,53 @@ class CorpusManager():
         t = time.time()
         p = Pool(n_proc)
         print('start indexing')
-        es = copy.deepcopy(random.sample(self.all_entities, n_entities))
+        # es = copy.deepcopy(random.sample(self.all_entities, n_entities))
+        es = copy.deepcopy(self.all_entities[:n_entities])
+        # print(es)
+
         if clean:
             index_list = [x for x in p.map(self.create_word_occurrence_index, es) if x]
         else:
-            index_list = [x for x in p.map(self.create_word_occurrence_index, es)]
+            index_list = [x for x in p.map(self.find_word_in_sentences, es)]
 
         # rebuild the parallel return
 
-        index_list_dict = {k:v for elem in index_list for k,v in elem.items()}
+        t = time.time() - t
+
+        index_list_dict = {k:v for elem in index_list for k, v in elem.items() if v}
 
         return index_list_dict, n_proc, n_entities, len(self.corpus), t
 
-    def create_word_occurrence_index(self, e):
+
+    def find_in_sentence(self, word, sentence):
+        indices = [i for i, x in enumerate(sentence.split()) if x == word]
+        return indices
+
+    def find_word_in_sentences(self, word):
+        returning_list = []
+        for row_index, sent in enumerate(self.joined_corpus):
+            indices = self.find_in_sentence(word = word, sentence = sent)
+            if indices:
+                returning_list.append((row_index, indices))
+        return {word : returning_list}
+
+    def create_word_occurrence_index(self, word):
         """
         loop on all the corpus and use re.finditer to return the index of all occurrences of the entity e
         :param 
             e: an entity name
         :return: a dict with the structure: {entity_name: list of tuples (row: [occurrences in row])}
         """
-        key = e
-        value = [(i, [m.start() for m in re.finditer(' ' + e + ' ', jo_c)]) for i, jo_c in enumerate(self.joined_corpus) if jo_c.find(' ' + e + ' ') != -1]
-        if value:
-            return {key: value}
+        key = word
+        returning_list = []
+
+        for row_index, sent in enumerate(self.joined_corpus):
+            if sent.find(' ' + word + ' ') != -1:
+                indices = self.find_in_sentence(word = word, sentence = sent)
+                if indices:
+                    returning_list.append((row_index, indices))
+                # value = [(i, [m.start() for m in re.finditer(' ' + e + ' ', jo_c)]) ]
+        return {key: returning_list}
 
     def clean_occurrences(self, list_of_indexes):
         return [{k:v} for L in list_of_indexes for k,v in L.items() if v]
