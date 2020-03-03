@@ -4,6 +4,7 @@ from collections import defaultdict
 import re
 import time
 import random
+import copy
 
 class CorpusManager():
     corpus = []
@@ -16,11 +17,11 @@ class CorpusManager():
 
     def read_corpus(self, PATH, length = 5000000):
         with open(PATH, 'r') as inp:
-            ll = inp.readlines()
             print('read input corpus')
+            ll = inp.readlines()
             for l in tqdm(ll[:length]):
                 l = l.replace('\n', '')
-                l = l.replace('  ', ' ')
+                l = re.sub(r'[ ]+',' ', l)
                 if len(l) > 0:
                     self.corpus.append(l.split(' '))
                     self.joined_corpus.append(l)
@@ -64,11 +65,12 @@ class CorpusManager():
         t = time.time()
         p = Pool(n_proc)
         print('start indexing')
-        es = self.all_entities[0:n_entities]
+        es = copy.deepcopy(self.all_entities[0:n_entities])
         if clean:
             index_list = [x for x in p.imap(self.create_word_occurrence_index, es) if x]
         else:
             index_list = [x for x in p.imap(self.create_word_occurrence_index, es)]
+
         return index_list, n_proc, n_entities, len(self.corpus), t
 
     def create_word_occurrence_index(self, e):

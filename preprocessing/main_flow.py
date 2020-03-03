@@ -6,6 +6,7 @@ from CorpusManager import CorpusManager
 import pickle
 from utils import save_data_with_pickle, load_data_with_pickle
 import time
+import random
 
 # List of classes used to test the correctness of the workflow
 LIST_OF_CLASSES = ['City', 'Mosque', 'Animal']
@@ -42,12 +43,15 @@ if __name__ == "__main__":
 
     # retrieve entities names
     e = EntityNameRetriever()
+    
+    FRAC = 0.25 # the time needed for the indexing part (logged) scale linearly with this variable, don't know why
 
     try:
+        1/0
         entity_dict = load_data_with_pickle(PICKLES_PATH + 'entity_dict')
     except:
-        entity_dict = e.entities_from_types(list_of_classes)
-        entity_dict = e.entity_name_preprocessing(entity_dict)
+        entity_dict = e.entities_from_types(random.sample(list_of_classes, int(FRAC*len(list_of_classes))))
+        entity_dict = e.entity_name_preprocessing(entity_dict, max_words=20)
         save_data_with_pickle(PICKLES_PATH + 'entity_dict', entity_dict)
 
     # %%
@@ -58,7 +62,6 @@ if __name__ == "__main__":
     print("the pruned graph is a tree: {}".format(nx.is_tree(pruned_G)))
 
     # %%
-
     # Read a corpus, search the occurrences of the entity in the corpus, 
     # returns a dict in format {"entity_name": [list of tuples: (row, entity_name_occurrence_index)]}
 
@@ -78,19 +81,17 @@ if __name__ == "__main__":
     #     # save_data_with_pickle(PICKLES_PATH + 'vocab', c.vocab)
     #     # save_data_with_pickle(PICKLES_PATH + 'concept_entities', c.concept_entities)
 
-    
     # %%
     N = [10, 15, 20, 25, 30]
     ENTITIES = [200]
     # LINES = [100000, 200000, 300000, 500000, 1000000, 5000000]
-    LINES = [100]
+    LINES = [1000]
     with open('log.txt', 'a') as out:
-            out.write('\n\n')
+            out.write('\n\nentities with only two words\n')
     for l in LINES:
         c = CorpusManager()
         c.read_corpus(CORPUS_PATH, l)
-        c.create_all_entities(entity_dict, concepts=list_of_classes)
-        
+        c.create_all_entities(entity_dict, concepts=list_of_classes)    
         for e in ENTITIES:
             for n in N:
                 f, n_proc, n_entities, leng, t = c.parallel_find(n_proc = n, n_entities= e)
@@ -110,10 +111,10 @@ if __name__ == "__main__":
         
         with open('log.txt', 'a') as out:
             out.write('\n')
-                
-                
-    t = time.time()
-    print('{} entities found'.format(len(f)))
+    save_data_with_pickle(PICKLES_PATH + 'word_occurrence_index', f)            
+          
+    # t = time.time()
+    # print('{} entities found'.format(len(f)))
     
 
 

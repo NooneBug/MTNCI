@@ -55,3 +55,102 @@
 
 10 processes,   200 entities, 100 lines,   152.60 seconds
 15 processes,   200 entities, 100 lines,   156.79 seconds
+
+
+10 processes,   200 entities, 100 lines,   158.02 seconds
+15 processes,   200 entities, 100 lines,   158.67 seconds
+20 processes,   200 entities, 100 lines,   156.26 seconds
+25 processes,   200 entities, 100 lines,   152.32 seconds
+30 processes,   200 entities, 100 lines,   153.29 seconds
+
+
+
+10 processes,   200 entities, 100 lines,   148.76 seconds
+15 processes,   200 entities, 100 lines,   151.10 seconds
+20 processes,   200 entities, 100 lines,   150.18 seconds
+25 processes,   200 entities, 100 lines,   151.58 seconds
+30 processes,   200 entities, 100 lines,   151.48 seconds
+
+
+
+10 processes,   200 entities, 100 lines,    66.59 seconds
+15 processes,   200 entities, 100 lines,    68.28 seconds
+20 processes,   200 entities, 100 lines,    65.80 seconds
+25 processes,   200 entities, 100 lines,    67.62 seconds
+30 processes,   200 entities, 100 lines,    64.08 seconds
+
+
+
+entities with only 2 two words
+10 processes,   200 entities, 1000 lines,    64.99 seconds
+15 processes,   200 entities, 1000 lines,    61.15 seconds
+20 processes,   200 entities, 1000 lines,    62.21 seconds
+25 processes,   200 entities, 1000 lines,    63.75 seconds
+30 processes,   200 entities, 1000 lines,    64.91 seconds
+
+
+
+entities with only two words
+10 processes,   200 entities, 1000 lines,     0.72 seconds
+15 processes,   200 entities, 1000 lines,     0.84 seconds
+20 processes,   200 entities, 1000 lines,     0.95 seconds
+25 processes,   200 entities, 1000 lines,     1.14 seconds
+30 processes,   200 entities, 1000 lines,     1.24 seconds
+
+
+
+entities with only two words
+10 processes,   200 entities, 1000 lines,     0.74 seconds
+15 processes,   200 entities, 1000 lines,     0.81 seconds
+20 processes,   200 entities, 1000 lines,     0.91 seconds
+25 processes,   200 entities, 1000 lines,     1.04 seconds
+30 processes,   200 entities, 1000 lines,     1.18 seconds
+
+
+
+entities with only two words
+10 processes,   200 entities, 1000 lines,    30.27 seconds
+15 processes,   200 entities, 1000 lines,    31.05 seconds
+20 processes,   200 entities, 1000 lines,    30.83 seconds
+25 processes,   200 entities, 1000 lines,    31.35 seconds
+30 processes,   200 entities, 1000 lines,    35.97 seconds
+
+
+
+entities with only two words
+10 processes,   200 entities, 1000 lines,    18.25 seconds
+15 processes,   200 entities, 1000 lines,    16.72 seconds
+20 processes,   200 entities, 1000 lines,    17.48 seconds
+25 processes,   200 entities, 1000 lines,    17.95 seconds
+30 processes,   200 entities, 1000 lines,    18.34 seconds
+
+
+
+entities with only two words
+
+
+entities with only two words
+10 processes,   200 entities, 1000 lines,    15.72 seconds
+15 processes,   200 entities, 1000 lines,    15.99 seconds
+20 processes,   200 entities, 1000 lines,    16.21 seconds
+25 processes,   200 entities, 1000 lines,    15.92 seconds
+30 processes,   200 entities, 1000 lines,    16.79 seconds
+
+
+
+entities with only two words
+10 processes,   200 entities, 1000 lines,     8.23 seconds
+15 processes,   200 entities, 1000 lines,     8.46 seconds
+20 processes,   200 entities, 1000 lines,     8.58 seconds
+25 processes,   200 entities, 1000 lines,     9.26 seconds
+30 processes,   200 entities, 1000 lines,     9.09 seconds
+
+
+
+entities with only two words
+10 processes,   200 entities, 1000 lines,    16.70 seconds
+15 processes,   200 entities, 1000 lines,    16.91 seconds
+20 processes,   200 entities, 1000 lines,    17.34 seconds
+25 processes,   200 entities, 1000 lines,    16.96 seconds
+30 processes,   200 entities, 1000 lines,    17.12 seconds
+

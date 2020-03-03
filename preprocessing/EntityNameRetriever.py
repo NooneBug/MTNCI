@@ -145,7 +145,7 @@ class EntityNameRetriever():
 
         return entity_dict
 
-    def entity_name_preprocessing(self, entity_dict, max_words = None):
+    def entity_name_preprocessing(self, entity_dict, max_words = 20):
         """
         clean the entity names
         :param 
@@ -180,7 +180,9 @@ class EntityNameRetriever():
         stri = ' '.join(stri.split('_'))
         stri = stri.replace('\'s', '')
         stri = stri.replace('\'', '')
-        stri = re.sub(r'[^\w\s]',' ', stri)
+        stri = re.sub(r'[^\w\s]','', stri)
+        stri = re.sub(r'[0-9]+',' ', stri)
+        stri = re.sub(r'[ ]+',' ', stri)
 
         return stri
 
