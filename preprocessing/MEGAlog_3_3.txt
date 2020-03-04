@@ -1,7 +1,75 @@
-
-
-
-
  2 processes,   800 entities,   50000 lines,    33.06 seconds
  3 processes,   800 entities,   50000 lines,    27.20 seconds
  4 processes,   800 entities,   50000 lines,    25.66 seconds
+ 5 processes,   800 entities,   50000 lines,    31.29 seconds
+ 6 processes,   800 entities,   50000 lines,    34.73 seconds
+ 7 processes,   800 entities,   50000 lines,    40.47 seconds
+10 processes,   800 entities,   50000 lines,    55.72 seconds
+20 processes,   800 entities,   50000 lines,   107.78 seconds
+
+ 2 processes,  1600 entities,   50000 lines,    58.43 seconds
+ 3 processes,  1600 entities,   50000 lines,    36.97 seconds
+ 4 processes,  1600 entities,   50000 lines,    37.33 seconds
+ 5 processes,  1600 entities,   50000 lines,    33.63 seconds
+ 6 processes,  1600 entities,   50000 lines,    37.51 seconds
+ 7 processes,  1600 entities,   50000 lines,    41.43 seconds
+10 processes,  1600 entities,   50000 lines,    57.27 seconds
+20 processes,  1600 entities,   50000 lines,   107.71 seconds
+
+ 2 processes,  3200 entities,   50000 lines,   111.33 seconds
+ 3 processes,  3200 entities,   50000 lines,    80.00 seconds
+ 4 processes,  3200 entities,   50000 lines,    65.80 seconds
+ 5 processes,  3200 entities,   50000 lines,    58.02 seconds
+ 6 processes,  3200 entities,   50000 lines,    44.12 seconds
+ 7 processes,  3200 entities,   50000 lines,    48.79 seconds
+10 processes,  3200 entities,   50000 lines,    62.23 seconds
+20 processes,  3200 entities,   50000 lines,   111.53 seconds
+
+ 2 processes,  6400 entities,   50000 lines,   210.90 seconds
+ 3 processes,  6400 entities,   50000 lines,   149.62 seconds
+ 4 processes,  6400 entities,   50000 lines,   117.93 seconds
+ 5 processes,  6400 entities,   50000 lines,    97.04 seconds
+ 6 processes,  6400 entities,   50000 lines,    91.06 seconds
+ 7 processes,  6400 entities,   50000 lines,    77.52 seconds
+10 processes,  6400 entities,   50000 lines,    67.22 seconds
+20 processes,  6400 entities,   50000 lines,   117.85 seconds
+
+ 2 processes, 12800 entities,   50000 lines,   420.26 seconds
+ 3 processes, 12800 entities,   50000 lines,   293.23 seconds
+ 4 processes, 12800 entities,   50000 lines,   225.10 seconds
+ 5 processes, 12800 entities,   50000 lines,   184.19 seconds
+ 6 processes, 12800 entities,   50000 lines,   157.93 seconds
+ 7 processes, 12800 entities,   50000 lines,   137.92 seconds
+10 processes, 12800 entities,   50000 lines,   108.24 seconds
+20 processes, 12800 entities,   50000 lines,   120.97 seconds
+
+ 2 processes, 25600 entities,   50000 lines,   796.05 seconds
+ 3 processes, 25600 entities,   50000 lines,   543.32 seconds
+ 4 processes, 25600 entities,   50000 lines,   419.95 seconds
+ 5 processes, 25600 entities,   50000 lines,   332.64 seconds
+ 6 processes, 25600 entities,   50000 lines,   275.32 seconds
+ 7 processes, 25600 entities,   50000 lines,   269.28 seconds
+10 processes, 25600 entities,   50000 lines,   193.43 seconds
+20 processes, 25600 entities,   50000 lines,   146.91 seconds
+
+
+ 2 processes,   800 entities,  100000 lines,    74.62 seconds
+ 3 processes,   800 entities,  100000 lines,    58.85 seconds
+ 4 processes,   800 entities,  100000 lines,    61.72 seconds
+ 5 processes,   800 entities,  100000 lines,    79.92 seconds
+ 6 processes,   800 entities,  100000 lines,    86.28 seconds
+ 7 processes,   800 entities,  100000 lines,    82.27 seconds
+10 processes,   800 entities,  100000 lines,   166.81 seconds
+20 processes,   800 entities,  100000 lines,   400.75 seconds
+
+
+
+10 processes,  1600 entities,  100000 lines,   116.93 seconds
+15 processes,  1600 entities,  100000 lines,   165.16 seconds
+20 processes,  1600 entities,  100000 lines,   214.51 seconds
+
+10 processes,  3200 entities,  100000 lines,   120.59 seconds
+15 processes,  3200 entities,  100000 lines,   168.40 seconds
+20 processes,  3200 entities,  100000 lines,   224.74 seconds
+
+10 processes,  6400 entities,  100000 lines,   132.88 seconds

@@ -17,7 +17,7 @@ PICKLES_PATH = '../../source_files/pickles/'
 PATH_TO_EDGELIST = PICKLES_PATH + 'dbpedia_edgelist_no_closure.tsv'
 # PATH to the corpus from which information are extracted
 CORPUS_PATH = '/datahdd/vmanuel/ELMo/Corpora/shuffled_text_with_words'
-LOG = 'MEGAlog_3_3.txt'
+LOG = 'log_4_3.txt'
 avoid_multilabeling = True
 
 # %%
@@ -45,8 +45,7 @@ if __name__ == "__main__":
     # retrieve entities names
     e = EntityNameRetriever()
     
-    FRAC = 0.02 # the time needed for the indexing part (logged) scale linearly with this variable, don't know why
-
+    FRAC = 1 
     # random.seed(236451)
     try:
         1/0
@@ -69,15 +68,14 @@ if __name__ == "__main__":
     # Read a corpus, search the occurrences of the entity in the corpus, 
     # returns a dict in format {"entity_name": [list of tuples: (row, entity_name_occurrence_index)]}
 
-    N = [2, 3, 4, 5, 6, 7, 10, 20]
-    # N = [20]
-    ENTITIES = [800, 1600, 3200, 6400, 12800, 25600]
-    # LINES = [100000, 200000, 300000, 500000, 1000000, 5000000]
-    LINES = [50000, 100000, 200000, 300000, 400000]
+    # N = [10, 15, 20]
+    N = [1]
+    ENTITIES = [0.25, 0.5, 0.75, 1]
+    LINES = [500000, 1000000, 5000000]
+    # LINES = [100000, 200000, 300000, 400000]
 
     with open(LOG, 'a') as out:
         out.write('\n\n')
-
 
     for l in LINES:
         c = CorpusManager()
@@ -93,27 +91,29 @@ if __name__ == "__main__":
         for e in ENTITIES:
             for n in N:
                 word_indexes, n_proc, n_entities, leng, t = c.parallel_find(n_proc = n, n_entities= e)
-                print('{:2} processes, {:5} entities, {:7} lines, {:8.2f} seconds'.format(n_proc, 
-                                                                                n_entities, 
+                print('{:2} process, {:5}/{:7} entities, {:7} lines, {:8.2f} seconds'.format(n_proc, 
+                                                                                n_entities,
+                                                                                len(c.all_entities),
                                                                                 leng,
                                                                                 t
                                                                                 ))
                 
                 with open(LOG, 'a') as out:
-                    out.write('{:2} processes, {:5} entities, {:7} lines, {:8.2f} seconds\n'.format(n_proc, 
+                    out.write('{:2} process, {:5}/{:7} entities, {:7} lines, {:8.2f} seconds\n'.format(n_proc, 
                                                                                 n_entities, 
+                                                                                len(c.all_entities),
                                                                                 leng,
                                                                                 t
                                                                                 ))
+            print('{} entities found'.format(len(word_indexes.keys())))
+            save_data_with_pickle(PICKLES_PATH + 'word_occurrence_index_{}_{}'.format(n_entities, leng), word_indexes)            
             with open(LOG, 'a') as out:
                 out.write('\n')
 
         with open(LOG, 'a') as out:
             out.write('\n')
 
-    save_data_with_pickle(PICKLES_PATH + 'word_occurrence_index', word_indexes)            
 
-    print('{} entities found'.format(len(word_indexes.keys())))
 
     # # filter the entity dict maintaining only the entities found in the corpus
     # found_entities = set(word_indexes.keys())
