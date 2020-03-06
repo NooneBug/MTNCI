@@ -226,3 +226,89 @@
  1 process, 1865329/1865329 entities, 4859518 lines,   457.55 seconds
 
 
+  330/478788 entities,      10 lines,     0.03 seconds  330/478788 entities,      10 lines,     0.03 seconds  330/478788 entities,      10 lines,     0.03 seconds
+
+
+
+
+
+ 1 process,  1630/ 478788 entities,     500 lines,    14.47 seconds
+
+
+
+10 process,  1630/ 478788 entities,     500 lines,    12.53 seconds
+15 process,  1630/ 478788 entities,     500 lines,    16.94 seconds
+20 process,  1630/ 478788 entities,     500 lines,    22.19 seconds
+
+10 process,  3260/ 478788 entities,     500 lines,    12.77 seconds
+15 process,  3260/ 478788 entities,     500 lines,    18.79 seconds
+20 process,  3260/ 478788 entities,     500 lines,    23.16 seconds
+
+10 process,  4890/ 478788 entities,     500 lines,    13.97 seconds
+15 process,  4890/ 478788 entities,     500 lines,    20.61 seconds
+20 process,  4890/ 478788 entities,     500 lines,    27.79 seconds
+
+10 process,  6520/ 478788 entities,     500 lines,    16.33 seconds
+15 process,  6520/ 478788 entities,     500 lines,    19.89 seconds
+20 process,  6520/ 478788 entities,     500 lines,    24.93 seconds
+
+
+10 process,  2580/ 478788 entities,    1000 lines,    13.93 seconds
+15 process,  2580/ 478788 entities,    1000 lines,    21.37 seconds
+20 process,  2580/ 478788 entities,    1000 lines,    26.11 seconds
+
+10 process,  5160/ 478788 entities,    1000 lines,    20.31 seconds
+15 process,  5160/ 478788 entities,    1000 lines,    29.76 seconds
+20 process,  5160/ 478788 entities,    1000 lines,    29.90 seconds
+
+10 process,  7740/ 478788 entities,    1000 lines,    26.15 seconds
+15 process,  7740/ 478788 entities,    1000 lines,    31.45 seconds
+20 process,  7740/ 478788 entities,    1000 lines,    34.24 seconds
+
+10 process, 10320/ 478788 entities,    1000 lines,    35.63 seconds
+15 process, 10320/ 478788 entities,    1000 lines,    35.05 seconds
+20 process, 10320/ 478788 entities,    1000 lines,    43.85 seconds
+
+
+10 process,  6690/ 478788 entities,    5000 lines,    87.66 seconds
+15 process,  6690/ 478788 entities,    5000 lines,    57.62 seconds
+20 process,  6690/ 478788 entities,    5000 lines,    66.73 seconds
+
+
+
+10 process,  1630/ 478788 entities,     500 lines,    11.84 seconds
+15 process,  1630/ 478788 entities,     500 lines,    17.10 seconds
+20 process,  1630/ 478788 entities,     500 lines,    22.09 seconds
+
+10 process,  3260/ 478788 entities,     500 lines,    11.40 seconds
+15 process,  3260/ 478788 entities,     500 lines,    17.68 seconds
+20 process,  3260/ 478788 entities,     500 lines,    22.64 seconds
+
+10 process,  4890/ 478788 entities,     500 lines,    12.52 seconds
+15 process,  4890/ 478788 entities,     500 lines,    17.15 seconds
+20 process,  4890/ 478788 entities,     500 lines,    23.87 seconds
+
+10 process,  6520/ 478788 entities,     500 lines,    12.29 seconds
+15 process,  6520/ 478788 entities,     500 lines,    16.87 seconds
+20 process,  6520/ 478788 entities,     500 lines,    23.32 seconds
+
+
+10 process,  2580/ 478788 entities,    1000 lines,    12.08 seconds
+15 process,  2580/ 478788 entities,    1000 lines,    19.82 seconds
+20 process,  2580/ 478788 entities,    1000 lines,    23.46 seconds
+
+10 process,  5160/ 478788 entities,    1000 lines,    12.60 seconds
+15 process,  5160/ 478788 entities,    1000 lines,    18.32 seconds
+20 process,  5160/ 478788 entities,    1000 lines,    23.70 seconds
+
+10 process,  7740/ 478788 entities,    1000 lines,    12.64 seconds
+15 process,  7740/ 478788 entities,    1000 lines,    18.48 seconds
+20 process,  7740/ 478788 entities,    1000 lines,    23.97 seconds
+
+10 process, 10320/ 478788 entities,    1000 lines,    13.91 seconds
+15 process, 10320/ 478788 entities,    1000 lines,    19.55 seconds
+20 process, 10320/ 478788 entities,    1000 lines,    26.19 seconds
+
+
+10 process,  6690/ 478788 entities,    5000 lines,    22.00 seconds
+15 process,  6690/ 478788 entities,    5000 lines,    40.21 seconds

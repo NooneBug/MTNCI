@@ -145,7 +145,7 @@ class EntityNameRetriever():
 
         return entity_dict
 
-    def entity_name_preprocessing(self, entity_dict, max_words = 20):
+    def entity_name_preprocessing(self, entity_dict, max_words = 20, min_length = 3):
         """
         clean the entity names
         :param 
@@ -160,7 +160,7 @@ class EntityNameRetriever():
         for k, values in entity_dict.items():
             for v in values:
                 v = self.preprocess(v)
-                if max_words and len(v.split(' ')) <= max_words and v != '':
+                if len(v) >= min_length and max_words and len(v.split(' ')) <= max_words and v != '':
                     cleaned_entity_dict[k].append(v)
         return cleaned_entity_dict
 
