@@ -25,6 +25,16 @@ class CorpusManager():
         self.joined_corpus = []           
 
     def read_corpus(self, PATH, length = 5000000):
+        """
+        read the corpus at PATH for the first length lines
+        for each line the '\n' is removed, multiple withespaces are compressed to one
+        save in the self.corpus a list for each line ('this is a sentence' become ['this', 'is', 'a', 'sentence'])
+        save in the self.joined corpus the line
+        create the vocab at self.vocab by adding each unique word
+        :param 
+            PATH: the path to the corpus
+            length: the number of lines that are to read
+        """
         self.corpus = []
         with open(PATH, 'r') as inp:
             print('read input corpus')
@@ -67,13 +77,17 @@ class CorpusManager():
         print('{} words in vocab'.format(len(self.vocab)))
         print('{} entities'.format(len(self.all_entities_tokens)))
         print('{} entity-tokens in vocab'.format(len(self.entities_token_in_corpus)))
-
-
-
         random.shuffle(self.all_entities_tokens)
 
     def parallel_find(self, n_proc, n_entities = None):
-        
+         """
+        takes a fraction of entities in self.entity_token_in_corpus and for each call the function self.entities_token_in_corpus
+        this method (and the involved one) are thought to work in parallel, so after the calling a reduce is applied
+        :param 
+           n_proc: the number of process used to make the computation
+           n_entities: the fraction of entities to find
+        """
+
         if not n_entities:
             n_entities = 1        
 
@@ -92,12 +106,14 @@ class CorpusManager():
         index_list_dict = {k:v for elem in index_list for k, v in elem.items() if v}
         p.close()
         return index_list_dict, n_proc, frac, len(self.corpus), t
-        
-    def find_in_sentence(self, word, sentence):
-        indices = [i for i, x in enumerate(sentence.split()) if x == word]
-        return indices
-
+    
     def create_word_occurrence_index(self, word):
+        """
+        loop on all the corpus, call self.find_in_sentence to find occurrences of word in each sentence, returns a dict
+        :param 
+            word: the word to find
+        :return: a dict with the structure: {entity_name: list of tuples (row: [occurrences in row])}
+        """
         key = word
         returning_list = []
         for row_index, sent in enumerate(self.joined_corpus):
@@ -107,43 +123,33 @@ class CorpusManager():
                     returning_list.append((row_index, indices))
         return {key: returning_list}
 
-    def create_word_occurrence_index_set(self, words):
+    def find_in_sentence(self, word, sentence):
         """
-        loop on all the corpus and use re.finditer to search the index and 
-        :param 
-            e: an entity name
-        :return: a dict with the structure: {entity_name: list of tuples (row: [occurrences in row])}
+        returns the indexes in which the word appear in a sentence
+        :params
+            word: the word to find
+            sentence: the sentence in which find the word
+        :return: a list of indices
         """
 
-        returning_dict = {}
-
-        for row_index, sent in enumerate(self.joined_corpus):
-            inter = set(sent.split(' ')).intersection(words)
-            if inter:
-                indices = self.find_in_sentence_set(words = inter, sentences = sent)
-                for k in indices.keys():
-                    try:
-                        returning_dict[k].append((row_index, indices[k]))
-                    except:
-                        returning_dict[k] = [(row_index, indices[k])]
-        return returning_dict
-
-    def find_in_sentence_set(self, words, sentences):
-
-        indices = {}
-        for i, sentence_word in enumerate(sentences.split()):
-            if sentence_word in words:
-                # append the word index in sentence
-                try:
-                    indices[sentence_word].append(i)
-                except:
-                    indices[sentence_word] = [i]
+        indices = [i for i, x in enumerate(sentence.split()) if x == word]
         return indices
 
     def clean_occurrences(self, list_of_indexes):
         return [{k:v} for L in list_of_indexes for k,v in L.items() if v]
 
     def avoid_multilabeling(self, entity_dict, G, file):
+        """
+        entity dict is a dict which format is : {concept: [list of entities], ...}, the same entity name can appear in more than one list
+        this method remove the repetitions:
+            first check which entities are repeated, then for each repeated entities select the concept which is more deeper in the graph,
+            if the most deepere concept is not unique, a casual concept (between the deepest) is taken 
+        :param 
+            entity_dict: the entity dict returned from the method self.entities_from_types
+            G: the graph which contains the concepts
+            file: path to the log file
+        :return: an entity_dict without repeated entities
+        """
         reverse_dict = defaultdict(list)
 
         for k, words in entity_dict.items():
@@ -197,6 +203,16 @@ class CorpusManager():
         return entity_dict
 
     def check_composite_words(self, word_indexes, entity_dict, verbose = False):
+        """
+        starting from indexes of useful words in corpus (word_indexes) and the entity to find (entity_dict) 
+        returns the occurrences of the entities in entity dict.
+        :param 
+            word_indexes: the first return of parallel find, contain a couple (row, index) for each word that is in entities names
+            entity_dict: the entity dict returned from the method self.entities_from_types
+            verbose: if True some (a very high number of) prints are showed
+        :return: a dict like word_indexes but with ALL AND ONLY the entities names in corpus, with row indexes and occurrence indexes
+        """
+
         j = 0
         found = defaultdict(list)
 
@@ -233,9 +249,27 @@ class CorpusManager():
             if not verbose:
                 bar.update(1)
         return found
-    
+
+
+    def extract_rows(self, word):
+        """
+        extract the row index from each tuple in word_indexes[word]
+        :param
+            word: a key in self.word_indexes
+        :return: a list of indexes which are the row in which word appear
+        """
+        return [t[0] for t in self.word_indexes[word]] #extract the row index from each tuple
+
     def check_entity_in_row(self, ENTITY, ROW, verbose):
-    
+        """
+        returns the indexes of all occurrences of an entity name (ENTITY) in a sentence (ROW)
+        :param 
+            ENTITY: an entity name (e.g., 'London', 'New York')
+            ROW: a row IN WHICH THE ENTITY OCCURS
+            verbose: if True some (a very high number of) prints are showed
+        :return: a list of indices which are the occurrence of ENTITY in the row ROW of the corpus
+        """
+
         a = self.extract_rows_occurrency(ENTITY.split(' '), ROW)
 
         if verbose:
@@ -263,9 +297,13 @@ class CorpusManager():
         if values:
             return values
 
-    def extract_rows(self, word):
-        return [t[0] for t in self.word_indexes[word]] #extract the row index from each tuple
 
     def extract_rows_occurrency(self, word_phrase, row):
+        """
+        extract the occurrency indexes of each token in the word_phrase for a row in the corpus
+        :param
+            word_prase: a list of token which compose an entity name (e.g., ['new', 'york'])
+            row: a row index of the corpus
+        :return: a list of indexes which are occurency indexes of the tokens
+        """
         return [t[1] for s in word_phrase for t in self.word_indexes[s] if t[0] == row]
-

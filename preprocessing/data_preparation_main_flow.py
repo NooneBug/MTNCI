@@ -23,7 +23,7 @@ WORD_OCCURRENCE_INDEX_PATH = PICKLES_PATH + 'word_occurrence_index_32150_100000s
 LENGTH = 100000
 
 avoid_multilabeling = True
-experimental = True
+experimental = False
 
 def experimental_run(list_of_classes):
     # N = [1]
@@ -123,11 +123,11 @@ if __name__ == "__main__":
     FRAC = 1 
     # random.seed(236451)
     try:
-        entity_dict = load_data_with_pickle(PICKLES_PATH + 'entity_dict')
+        entity_dict = load_data_with_pickle(PICKLES_PATH + 'entity_dict_9_3')
     except:
         entity_dict = e.entities_from_types(random.sample(list_of_classes, int(FRAC*len(list_of_classes))))
         entity_dict = e.entity_name_preprocessing(entity_dict, max_words=20)
-        save_data_with_pickle(PICKLES_PATH + 'entity_dict', entity_dict)
+        save_data_with_pickle(PICKLES_PATH + 'entity_dict_9_3', entity_dict)
 
     # %%
     
@@ -143,24 +143,26 @@ if __name__ == "__main__":
 
     if experimental:
         experimental_run(list_of_classes = list_of_classes)
-
         
     else:
-        word_indexes = load_data_with_pickle(WORD_OCCURRENCE_INDEX_PATH)
-
         c = CorpusManager()
         c.read_corpus(CORPUS_PATH, LENGTH)
-        occurrences_of_entities = c.check_composite_words(word_indexes = word_indexes, entity_dict = entity_dict)
+        try:
+            1/0
+            word_indexes = load_data_with_pickle(WORD_OCCURRENCE_INDEX_PATH)
+            occurrences_of_entities = c.check_composite_words(word_indexes = word_indexes, entity_dict = entity_dict)
 
-        save_data_with_pickle(PICKLES_PATH + 'occurrences_of_entities', occurrences_of_entities)
-
+            save_data_with_pickle(PICKLES_PATH + 'occurrences_of_entities', occurrences_of_entities)
+        except:
+            print('load occurrence of entities')
+            occurrences_of_entities = load_data_with_pickle(PICKLES_PATH + 'occurrences_of_entities_9_3')
+    
     # # filter the entity dict maintaining only the entities found in the corpus
-    found_entities = set(word_indexes.keys())
+    print('make found entity dict')
+    found_entities = set(occurrences_of_entities.keys())
     found_entity_dict = {k: set(v).intersection(found_entities) for k,v in entity_dict.items() if set(v).intersection(found_entities)}
     
     if avoid_multilabeling:
         found_entity_dict = c.avoid_multilabeling(found_entity_dict, G, file = 'logs/avoid_multilabeling.txt')
 
-    save_data_with_pickle(PICKLES_PATH + 'found_entity_dict', found_entity_dict)            
-
-# %%
+    save_data_with_pickle(PICKLES_PATH + 'found_entity_dict_9_3', found_entity_dict)            
