@@ -9,7 +9,6 @@ import time
 import random
 
 # List of classes used to test the correctness of the workflow
-# LIST_OF_CLASSES = ['City', 'Mosque', 'Animal']
 # PATH in which utility files are stored
 PICKLES_PATH = '../../source_files/pickles/'
 
@@ -19,11 +18,21 @@ PATH_TO_EDGELIST = PICKLES_PATH + 'dbpedia_edgelist_no_closure.tsv'
 CORPUS_PATH = '/datahdd/vmanuel/ELMo/Corpora/shuffled_text_with_words'
 LOG = 'MEGAlog_4_3.txt'
 
-WORD_OCCURRENCE_INDEX_PATH = PICKLES_PATH + 'word_occurrence_index_32150_100000static'
+FILE_ID = '10_3_'
+
+GRAPH_PATH = PICKLES_PATH + FILE_ID + 'graph'
+ENTITY_DICT_PATH = PICKLES_PATH + FILE_ID +'entity_dict'
+WORD_INDEXES_PATH = PICKLES_PATH + FILE_ID + 'word_indexes'
+WORD_OCCURRENCE_INDEX_PATH = PICKLES_PATH + FILE_ID + 'word_occurrence_indexes'
+FOUND_ENTITY_DICT_PATH = PICKLES_PATH + FILE_ID + 'found_entity_dict'
+FINAL_TREE_PATH = PICKLES_PATH + FILE_ID + 'final_tree'
+
 LENGTH = 100000
 
-avoid_multilabeling = True
+avoid_multilabeling = False
 experimental = False
+
+
 
 def experimental_run(list_of_classes):
     # N = [1]
@@ -38,13 +47,8 @@ def experimental_run(list_of_classes):
         N = [i for i in range(15, 36)]
         c = CorpusManager()
         c.read_corpus(CORPUS_PATH, l)
-        # c.joined_corpus = ['io sono un gatto', 
-        #                     'sono in quarantena per il corona virus', 
-        #                     'gatto gatto corona'
-        #                     ] 
         c.create_all_entities(entity_dict, concepts=list_of_classes)    
-        # c.create_all_entities(entity_dict, concepts=['Inventate'])    
-
+        
 
         for e in ENTITIES:
             prev_t = 100000000
@@ -104,10 +108,18 @@ if __name__ == "__main__":
 
     # Create the ontology tree
     try:
-        G = load_data_with_pickle(PICKLES_PATH + 'graph')
+        print('load graph from {}'.format(GRAPH_PATH))
+        t = time.time()
+        G = load_data_with_pickle(GRAPH_PATH)
+        t = time.time() - t
+        print('loaded in {:.2f} seconds'.format(t))
     except:
+        print('failed: building graph')
+        t = time.time()
         G = graph_from_edgelist(PATH_TO_EDGELIST)
-        save_data_with_pickle(PICKLES_PATH + 'graph', G)
+        t = time.time() - t
+        save_data_with_pickle(GRAPH_PATH, G)
+        print('built in {:.2f} seconds, saved in {}'.format(t, GRAPH_PATH))        
 
     # Check if the built graph is a tree (it should be a tree because we need to use an Ontology Tree)
     print("the input graph is a tree: {}".format(nx.is_tree(G)))
@@ -123,11 +135,20 @@ if __name__ == "__main__":
     FRAC = 1 
     # random.seed(236451)
     try:
-        entity_dict = load_data_with_pickle(PICKLES_PATH + 'entity_dict_9_3')
+        print('load entity dict from :{}'.format(ENTITY_DICT_PATH))
+        t = time.time()
+        entity_dict = load_data_with_pickle(ENTITY_DICT_PATH)
+        t = time.time() - t
+        print('loaded in {:.2f} seconds'.format(t))
     except:
+        print('failed')
+        print('build entity_dict')
+        t = time.time()
         entity_dict = e.entities_from_types(random.sample(list_of_classes, int(FRAC*len(list_of_classes))))
         entity_dict = e.entity_name_preprocessing(entity_dict, max_words=20)
-        save_data_with_pickle(PICKLES_PATH + 'entity_dict_9_3', entity_dict)
+        t = time.time() - t 
+        save_data_with_pickle(ENTITY_DICT_PATH, entity_dict)
+        print('build in {:.2f} seconds, saved in {}'.format(t, ENTITY_DICT_PATH))
 
     # %%
     
@@ -142,22 +163,40 @@ if __name__ == "__main__":
     # returns a dict in format {"entity_name": [list of tuples: (row, entity_name_occurrence_index)]}
 
     if experimental:
+        print('starting experimenta run')
         experimental_run(list_of_classes = list_of_classes)
-        
     else:
         c = CorpusManager()
         c.read_corpus(CORPUS_PATH, LENGTH)
+        c.create_all_entities(entity_dict, concepts=list_of_classes)    
+        
         try:
-            1/0
-            word_indexes = load_data_with_pickle(WORD_OCCURRENCE_INDEX_PATH)
-            occurrences_of_entities = c.check_composite_words(word_indexes = word_indexes, entity_dict = entity_dict)
-
-            save_data_with_pickle(PICKLES_PATH + 'occurrences_of_entities', occurrences_of_entities)
+            print('load occurrence_of_entities from {}'.format(WORD_OCCURRENCE_INDEX_PATH))
+            t = time.time()
+            occurrences_of_entities = load_data_with_pickle(WORD_OCCURRENCE_INDEX_PATH)
+            print('loaded in {:.2f} seconds'.format(time.time() - t))
         except:
-            print('load occurrence of entities')
-            occurrences_of_entities = load_data_with_pickle(PICKLES_PATH + 'occurrences_of_entities_9_3')
-    
+            print('failed')
+
+            try:
+                print('load word_indexes_from {}'.format(WORD_INDEXES_PATH))
+                t = time.time()
+                word_indexes = load_data_with_pickle(WORD_INDEXES_PATH)
+                print('loaded in {:.2f} seconds'.format(time.time() - t))
+            except:
+                print('failed!, build word_indexes')
+                word_indexes, n_proc, n_entities, leng, t = c.parallel_find(n_proc = 30, n_entities= 1)
+                print('built in {:.2f} seconds, saved in {}'.format(t, WORD_OCCURRENCE_INDEX_PATH))
+                save_data_with_pickle(WORD_INDEXES_PATH, word_indexes)
+                print('build occurrence_of_entities')
+                t = time.time()
+            
+            occurrences_of_entities = c.check_composite_words(word_indexes = word_indexes, entity_dict = entity_dict)
+            t = time.time() - t
+            save_data_with_pickle(WORD_OCCURRENCE_INDEX_PATH, occurrences_of_entities)
+            print('built in {:.2f} seconds, saved in {}'.format(t, WORD_OCCURRENCE_INDEX_PATH))
     # # filter the entity dict maintaining only the entities found in the corpus
+
     print('make found entity dict')
     found_entities = set(occurrences_of_entities.keys())
     found_entity_dict = {k: set(v).intersection(found_entities) for k,v in entity_dict.items() if set(v).intersection(found_entities)}
@@ -165,4 +204,10 @@ if __name__ == "__main__":
     if avoid_multilabeling:
         found_entity_dict = c.avoid_multilabeling(found_entity_dict, G, file = 'logs/avoid_multilabeling.txt')
 
-    save_data_with_pickle(PICKLES_PATH + 'found_entity_dict_9_3', found_entity_dict)            
+    save_data_with_pickle(FOUND_ENTITY_DICT_PATH, found_entity_dict)            
+
+    void_types = [t for t, v in found_entity_dict.items() if v == []]
+
+    pruned_G = remove_void_types(G, void_types)
+    save_data_with_pickle(FINAL_TREE_PATH, pruned_G)
+    print("the pruned graph is a tree: {}, saved in {}".format(nx.is_tree(pruned_G), FINAL_TREE_PATH))

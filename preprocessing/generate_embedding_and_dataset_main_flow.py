@@ -12,7 +12,7 @@ ENTITY_DICT_PATH = PICKLES_PATH + 'found_entity_dict_9_3'
 CORPUS_PATH = '/datahdd/vmanuel/ELMo/Corpora/shuffled_text_with_words'
 LENGTH = 100000
 
-DATA_PATH = '../../source_files/vectors'
+DATA_PATH = '../../source_files/vectors/'
 X_PATH = DATA_PATH + 'X_9_3'
 Y_PATH = DATA_PATH + 'Y_9_3'
 entities_PATH = DATA_PATH + 'entities_9_3'

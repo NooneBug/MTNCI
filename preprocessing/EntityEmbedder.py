@@ -187,4 +187,4 @@ class EntityEmbedder:
         save_data_with_pickle(X_PATH, X)
         save_data_with_pickle(Y_PATH, Y)
         save_data_with_pickle(entities_PATH, entities)
-                                                                                                                                                                                                                
+                                                                                                                                                                                                                        

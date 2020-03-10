@@ -80,7 +80,7 @@ class CorpusManager():
         random.shuffle(self.all_entities_tokens)
 
     def parallel_find(self, n_proc, n_entities = None):
-         """
+        """
         takes a fraction of entities in self.entity_token_in_corpus and for each call the function self.entities_token_in_corpus
         this method (and the involved one) are thought to work in parallel, so after the calling a reduce is applied
         :param 
@@ -225,9 +225,9 @@ class CorpusManager():
 
         keys = set(word_indexes.keys())
 
-        bar = tqdm(total = len(all_entities))
+        # bar = tqdm(total = len(all_entities))
         
-        for entity in all_entities:
+        for entity in tqdm(all_entities):
             splitted = entity.split(' ')
             if set(splitted) <= keys:
                 # all words in this entity are in the corpus
@@ -247,7 +247,8 @@ class CorpusManager():
                 elif rows:
                     found[entity] = word_indexes[entity]
             if not verbose:
-                bar.update(1)
+                pass
+                # bar.update(1)
         return found
 
 
