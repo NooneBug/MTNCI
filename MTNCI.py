@@ -88,4 +88,4 @@ class MTNCI(nn.Module):
         return outDis, outHyp    
 
     def voting(self, vectors, hyperbolic_embedding, distributional_embedding):
-        
+        pass

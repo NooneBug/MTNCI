@@ -28,8 +28,7 @@ class ConceptEmbedding():
         self.HYPER_E = 'HyperE'
         self.TYPE2VEC = 'Type2Vec'
 
-        # self.transitive_closure = nx.algorithms.dag.transitive_closure(self.tree)
-    def read_trees(self, tree_path, pruned_tree_path):
+    def read_tree(self, tree_path):
         '''
         load two networkx graph (must be a tree)
         params:
@@ -37,7 +36,6 @@ class ConceptEmbedding():
             pruned_tree_path: path to a pickle which contain a networkx tree
         '''
         self.tree = load_data_with_pickle(tree_path)
-        self.pruned_tree = load_data_with_pickle(pruned_tree_path)
 
     def set_model_name(self, model_name):
         ''' 
@@ -49,7 +47,7 @@ class ConceptEmbedding():
         '''
         self.model_name = model_name
 
-    def create_embedding(self, embedding_name):
+    def setup_embedding(self, embedding_name):
         '''
         setup the embedding creation, needs to be reimplemented in each class
         :params
@@ -57,13 +55,16 @@ class ConceptEmbedding():
         '''
         print('building the {} concept embedding',format(self.model_name))
         self.save_path = EMBEDDING_PATH + embedding_name
+    
+    def save_edgelist(self, edgelist, file):
+        with open(file, 'w') as out:
+            for s, v in edgelist:
+                for t in v:
+                    out.write('{} {}\n'.format(s, t))
 
 class HyperEEmbeddingManager(ConceptEmbedding):
     
     # Class which deploys HyperE ( https://github.com/HazyResearch/hyperbolics )
-    
-    def _init__(self, tree_path):
-        super()
 
     def create_dictionary(self):
         '''
@@ -73,7 +74,7 @@ class HyperEEmbeddingManager(ConceptEmbedding):
         self.dic = {}
         i = 0
 
-        for n in list(nx.traversal.bfs_tree(self.pruned_tree, 'Thing')):
+        for n in list(nx.traversal.bfs_tree(self.tree, 'Thing')):
             self.dic[n] = i
             i += 1
         
@@ -84,18 +85,16 @@ class HyperEEmbeddingManager(ConceptEmbedding):
         '''
         create and save at DATA_PATH + 'MTNCI_edgelist' the numeric edgelist
         '''
-        ordered_edgelist = {n:list(self.pruned_tree.successors(n)) for n in self.pruned_tree.nodes()}
+        ordered_edgelist = {n:list(self.tree.successors(n)) for n in self.tree.nodes()}
         edgelist = defaultdict(list)
         for k, v in ordered_edgelist.items():
             for al in v:
-                edgelist[k].append(al)
+                edgelist[self.dic[k]].append(self.dic[al])
         
         ordered_edgelist = sorted(edgelist.items(), key=itemgetter(0))
+
+        self.save_edgelist(edgelist = ordered_edgelist, file = DATA_PATH + 'MTNCI_edgelist')
         
-        with open(DATA_PATH + 'MTNCI_edgelist', 'w') as out:
-            for s, v in ordered_edgelist:
-                for t in v:
-                    out.write('{} {}\n'.format(self.dic[s], self.dic[t]))
 
     def create_embedding(self, embedding_name, dimensions = 2):
         
@@ -106,9 +105,10 @@ class HyperEEmbeddingManager(ConceptEmbedding):
             dimensions: the dimensions used to make the embedding
         '''
         
-        super()
+        self.set_model_name(self.HYPER_E)
+        self.setup_embedding(embedding_name)
         
-        if type(dimension) != int:
+        if type(dimensions) != int:
             raise Exception('Dimensions needs to be a number!!')
         
         self.create_dictionary()
@@ -117,14 +117,15 @@ class HyperEEmbeddingManager(ConceptEmbedding):
         os.chdir('../hyperbolics/Docker')
         os.system('docker build -t hyperbolics/gpu .')
         os.chdir('..')
-        os.system('nvidia-docker run -v "$PWD:/root/hyperbolics" -it hyperbolics/gpu julia combinatorial/comb.jl -d data/edges/MTNCI_edgelist -m {} -e 1.0 -p 64 -r {} -a -s'.format(embedding_name, dimensions))
+        os.system('nvidia-docker run --name MTNCI_HYPERE_DOCKER -v "$PWD:/root/hyperbolics" -it hyperbolics/gpu julia combinatorial/comb.jl -d data/edges/MTNCI_edgelist -m {} -e 1.0 -p 64 -r {} -a -s'.format(embedding_name + '_to_parse', dimensions))
+        os.system('docker stop MTNCI_HYPERE_DOCKER')
+        os.system('docker container rm MTNCI_HYPERE_DOCKER')
         print(os.getcwd())
-        os.system('mv {} ../../source_files/embeddings/'.format(embedding_name))
+        os.system('mv {} ../../source_files/embeddings/'.format(embedding_name + '_to_parse'))
 
-        self.embedding = self.import_stanford_hyperbolic(PATH = self.save_path)
-        print('------------------')
-        print(self.embedding)
-
+        self.embedding = self.import_stanford_hyperbolic(PATH = self.save_path + '_to_parse')
+        save_data_with_pickle(self.save_path, self.embedding)
+        
     def import_stanford_hyperbolic(self, PATH):
         '''
         parse the julia script output and build a dictionary which become the embedding
@@ -144,6 +145,51 @@ class HyperEEmbeddingManager(ConceptEmbedding):
         return stanford_emb, tau
 
 
+class NickelPoincareEmbeddingManager(ConceptEmbedding):
+
+    def __init__(self):
+        super()
+        self.sh_script_PLACEHOLDER = '''
+python3 embed.py \
+-dim {} \
+-lr 0.3 \
+-epochs {} \
+-negs 50 \
+-burnin 20 \
+-ndproc 4 \
+-model distance \
+-manifold poincare \
+-dset MTNCI/closure.csv \
+-checkpoint MTNCI.pth \
+-batchsize 10 \
+-eval_each 1 \
+-fresh \
+-sparse \
+-train_threads 2
+                        '''
+
+    def create_transitive_closure(self):
+        self.transitive_closure = nx.algorithms.dag.transitive_closure(self.tree)
+        self.create_edgelist()
+
+    def create_edgelist(self):
+        self.edgelist = {n:list(self.transitive.successors(n)) for n in self.transitive_closure.nodes()}
+        
+    # def create_embedding(self, embedding_name, dimensions = 2, epochs = 300):
+    #     self.setup_embedding(embedding_name = embedding_name)
+    #     self.create_transitive_closure()
+
+    #     self.script = self.sh_script_PLACEHOLDER.format(dimensions, epochs)
+
+    #     with open(, 'w') as out:
+    #         out.write(self.script)
+
+    #     # build the embedding with the docker
+    #     # mv the embedding in the right place (/source_files/embeddings/HypeNickel)
+    #     # parse the embedding and save the parsed
+        
+
+
 class Type2VecEmbeddingManager(ConceptEmbedding):
     
     # Class which deploys Type2Vec ( https://github.com/vinid/type2vec ) 
@@ -151,6 +197,10 @@ class Type2VecEmbeddingManager(ConceptEmbedding):
     def __init__(self, concept_corpus_path):
         super()
         self.concept_corpus_path = concept_corpus_path
+
+    def read_trees(self, tree_path, pruned_tree_path):
+        self.read_tree(tree_path)
+        self.pruned_tree = load_data_with_pickle(pruned_tree_path)
 
     def create_embedding(self, embedding_name, remove_mode):
         
@@ -161,8 +211,7 @@ class Type2VecEmbeddingManager(ConceptEmbedding):
             remove_mode: the modality according to which nodes that are not in tree (but are in the corpus) are replaced (see  self.remove_with_critera)
         '''
         
-        super()
-        self.save_path = EMBEDDING_PATH + embedding_name
+        self.setup_embedding(embedding_name)
         self.remove_mode = remove_mode
         self.cleaned_corpus = self.clean_corpus(known = list(self.pruned_tree.nodes()))
         self.embedding = self.train_t2v()
@@ -188,23 +237,25 @@ class Type2VecEmbeddingManager(ConceptEmbedding):
             for s in tqdm(sentences):
                 cleaned_sentence = []
                 words = s.split(' ')
+                replaced_words = set() 
                 for w in words:
                     if w == 'owl#Thing':
                         cleaned_sentence.append('Thing')
                     elif w in known:
                         cleaned_sentence.append(w)
                     else:
-                        replacement = -1
-                        while replacement not in knwon and replacement != '':
-                            replacement = self.remove_with_criteria(w)
+                        replacement = w
+                        while replacement and replacement not in known and replacement != '':
+                            replacement = self.remove_with_criteria(replacement)
                         if replacement:
                             cleaned_sentence.append(replacement)
                         removed += 1
+                        replaced_words.add(w)
                     total += 1
                 if cleaned_sentence: 
                     cleaned_type_corpus.append(cleaned_sentence)
 
-        print('removed {} word on {}, ({:.2f}%)'.format(removed, total, removed/total))
+        print('replaced {} word on {}, ({:.2f}%, {} unique words)'.format(removed, total, removed/total, len(replaced_words)))
         return cleaned_type_corpus
 
 

@@ -172,12 +172,12 @@ class CorpusManager():
                     d = nx.shortest_path_length(G, 'Thing', clas)
                     if d < min_dist:
                         min_dist = d
-                        min_k = clas.lower()
+                        min_k = clas
                     if d == min_dist:
                         x = random.random()
                         if x > 0.5:
                             min_dist = d
-                            min_k = clas.lower()
+                            min_k = clas
                 for clas in v:
                     if clas != min_k:
                         with open(file, 'a') as out:

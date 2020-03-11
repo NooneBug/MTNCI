@@ -172,7 +172,7 @@ class EntityEmbedder:
 
         for k, words in entity_dict.items():
             for w in words:
-                reverse_dict[w].append(k)
+                reverse_dict[w].append(k[0])
         X = []
         Y = []
         entities = []

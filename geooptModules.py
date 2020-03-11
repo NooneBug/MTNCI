@@ -1,4 +1,5 @@
 import geoopt
+import torch
 
 class MobiusLinear(torch.nn.Linear):
     def __init__(self, *args, nonlin=None, ball=None, c=1.0, **kwargs):

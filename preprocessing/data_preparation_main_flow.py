@@ -29,7 +29,7 @@ FINAL_TREE_PATH = PICKLES_PATH + FILE_ID + 'final_tree'
 
 LENGTH = 100000
 
-avoid_multilabeling = False
+avoid_multilabeling = True
 experimental = False
 
 

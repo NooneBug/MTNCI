@@ -6,16 +6,16 @@ from CorpusManager import CorpusManager
 
 # PATH in which utility files are stored
 PICKLES_PATH = '../../source_files/pickles/'
-OCCURRENCE_OF_ENTITIES_PATH = PICKLES_PATH + 'occurrences_of_entities_9_3'
-ENTITY_DICT_PATH = PICKLES_PATH + 'found_entity_dict_9_3'
+OCCURRENCE_OF_ENTITIES_PATH = PICKLES_PATH + '10_3_word_occurrence_indexes'
+ENTITY_DICT_PATH = PICKLES_PATH + '10_3_found_entity_dict'
 
 CORPUS_PATH = '/datahdd/vmanuel/ELMo/Corpora/shuffled_text_with_words'
 LENGTH = 100000
 
 DATA_PATH = '../../source_files/vectors/'
-X_PATH = DATA_PATH + 'X_9_3'
-Y_PATH = DATA_PATH + 'Y_9_3'
-entities_PATH = DATA_PATH + 'entities_9_3'
+X_PATH = DATA_PATH + '10_3_X'
+Y_PATH = DATA_PATH + '10_3_Y'
+entities_PATH = DATA_PATH + '10_3_entities'
 
 if __name__ == "__main__":
     entity_dict = load_data_with_pickle(ENTITY_DICT_PATH)
