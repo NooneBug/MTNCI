@@ -1,2 +1,0 @@
-20 processes,   200 entities, 500000 lines,     8.39 seconds
-20 processes,  2000 entities, 500000 lines,    40.64 seconds
