@@ -53,7 +53,7 @@ class ConceptEmbedding():
         :params
             embedding_name: the relative path in which the embedding will be saved, will be combined with EMBEDDING_PATH
         '''
-        print('building the {} concept embedding',format(self.model_name))
+        print('building the {} concept embedding'.format(self.model_name))
         self.save_path = EMBEDDING_PATH + embedding_name
     
     def save_edgelist(self, edgelist, file):
@@ -194,15 +194,14 @@ class Type2VecEmbeddingManager(ConceptEmbedding):
     
     # Class which deploys Type2Vec ( https://github.com/vinid/type2vec ) 
     
-    def __init__(self, concept_corpus_path):
+    def __init__(self):
         super()
-        self.concept_corpus_path = concept_corpus_path
 
     def read_trees(self, tree_path, pruned_tree_path):
         self.read_tree(tree_path)
         self.pruned_tree = load_data_with_pickle(pruned_tree_path)
 
-    def create_embedding(self, embedding_name, remove_mode):
+    def create_embedding(self, embedding_name, remove_mode, concept_corpus_path):
         
         '''
         build the embedding according to the type2vec project
@@ -210,7 +209,8 @@ class Type2VecEmbeddingManager(ConceptEmbedding):
             embedding_name: the name of the produced embedding
             remove_mode: the modality according to which nodes that are not in tree (but are in the corpus) are replaced (see  self.remove_with_critera)
         '''
-        
+        self.concept_corpus_path = concept_corpus_path
+        self.model_name = 'Type2Vec'
         self.setup_embedding(embedding_name)
         self.remove_mode = remove_mode
         self.cleaned_corpus = self.clean_corpus(known = list(self.pruned_tree.nodes()))

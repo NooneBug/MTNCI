@@ -13,11 +13,11 @@ TYPE_CORPUS = '../../source_files/type2vec_utilities/annotated_text_with_types.t
 
 if __name__ == "__main__":
     
-    concept_embedding_manager = HyperEEmbeddingManager()
-    concept_embedding_manager.read_tree(tree_path = FINAL_TREE_PATH)
-    concept_embedding_manager.create_embedding('10_3_final_tree_HyperE_MTNCI')
+    # concept_embedding_manager = HyperEEmbeddingManager()
+    # concept_embedding_manager.read_tree(tree_path = FINAL_TREE_PATH)
+    # concept_embedding_manager.create_embedding('10_3_final_tree_HyperE_MTNCI')
 
-    # concept_embedding_manager = Type2VecEmbeddingManager(concept_corpus_path = TYPE_CORPUS)
-
+    concept_embedding_manager = Type2VecEmbeddingManager()
     # concept_embedding_manager.read_trees(PICKLES_PATH + '10_3_graph', FINAL_TREE_PATH) 
-    # concept_embedding_manager.create_embedding(embedding_name = '10_3_final_tree_type2vec_MTNCI', remove_mode = 'Remove') 
+    concept_embedding_manager.read_trees(PICKLES_PATH + '10_3_graph', PICKLES_PATH + '10_3_graph') 
+    concept_embedding_manager.create_embedding(embedding_name = 'FEDE_type2vec', remove_mode = 'Remove', concept_corpus_path = TYPE_CORPUS) 

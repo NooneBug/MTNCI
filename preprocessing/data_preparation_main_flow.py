@@ -18,7 +18,7 @@ PATH_TO_EDGELIST = PICKLES_PATH + 'dbpedia_edgelist_no_closure.tsv'
 CORPUS_PATH = '/datahdd/vmanuel/ELMo/Corpora/shuffled_text_with_words'
 LOG = 'MEGAlog_4_3.txt'
 
-FILE_ID = '10_3_'
+FILE_ID = '12_3_v2_'
 
 GRAPH_PATH = PICKLES_PATH + FILE_ID + 'graph'
 ENTITY_DICT_PATH = PICKLES_PATH + FILE_ID +'entity_dict'
@@ -188,9 +188,9 @@ if __name__ == "__main__":
                 word_indexes, n_proc, n_entities, leng, t = c.parallel_find(n_proc = 30, n_entities= 1)
                 print('built in {:.2f} seconds, saved in {}'.format(t, WORD_OCCURRENCE_INDEX_PATH))
                 save_data_with_pickle(WORD_INDEXES_PATH, word_indexes)
-                print('build occurrence_of_entities')
-                t = time.time()
             
+            print('build occurrence_of_entities')
+            t = time.time()
             occurrences_of_entities = c.check_composite_words(word_indexes = word_indexes, entity_dict = entity_dict)
             t = time.time() - t
             save_data_with_pickle(WORD_OCCURRENCE_INDEX_PATH, occurrences_of_entities)
@@ -202,7 +202,7 @@ if __name__ == "__main__":
     found_entity_dict = {k: set(v).intersection(found_entities) for k,v in entity_dict.items() if set(v).intersection(found_entities)}
     
     if avoid_multilabeling:
-        found_entity_dict = c.avoid_multilabeling(found_entity_dict, G, file = 'logs/avoid_multilabeling.txt')
+        found_entity_dict = c.avoid_multilabeling(found_entity_dict, G, file = '../../source_files/logs/avoid_multilabeling.txt')
 
     save_data_with_pickle(FOUND_ENTITY_DICT_PATH, found_entity_dict)            
 

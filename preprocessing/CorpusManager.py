@@ -116,9 +116,9 @@ class CorpusManager():
         """
         key = word
         returning_list = []
-        for row_index, sent in enumerate(self.joined_corpus):
-            if sent.find(' ' + word + ' ') != -1:
-                indices = self.find_in_sentence(word = word, sentence = sent)
+        for row_index, splitted_sentence in enumerate(self.corpus):
+            if word in splitted_sentence:
+                indices = self.find_in_sentence(word = word, sentence = splitted_sentence)
                 if indices:
                     returning_list.append((row_index, indices))
         return {key: returning_list}
@@ -132,7 +132,7 @@ class CorpusManager():
         :return: a list of indices
         """
 
-        indices = [i for i, x in enumerate(sentence.split()) if x == word]
+        indices = [i for i, x in enumerate(sentence) if x == word]
         return indices
 
     def clean_occurrences(self, list_of_indexes):
@@ -216,9 +216,9 @@ class CorpusManager():
         j = 0
         found = defaultdict(list)
 
-        all_entities = []
         self.word_indexes = word_indexes
 
+        all_entities = []
         for _, v in entity_dict.items():
             all_entities.extend(v)
         all_entities = set(all_entities)
@@ -235,7 +235,8 @@ class CorpusManager():
                 rows = self.extract_rows(splitted[i])
                 while rows and i + 1 < len(splitted):
                     i += 1
-                    rows = [r for r in rows if r in self.extract_rows(splitted[i])]
+                    new_rows = set(self.extract_rows(splitted[i]))
+                    rows = list(set(rows).intersection(new_rows))
                 if rows and len(splitted) > 1:
                     for r in rows:
                         b = self.check_entity_in_row(ENTITY=entity, ROW=r, verbose = verbose)
