@@ -172,7 +172,7 @@ class EntityEmbedder:
 
         for k, words in entity_dict.items():
             for w in words:
-                reverse_dict[w].append(k[0])
+                reverse_dict[w].append(k)
         X = []
         Y = []
         entities = []
@@ -181,7 +181,7 @@ class EntityEmbedder:
             if label in reverse_dict:
                 for v in label_vectors:
                     X.append(v)
-                    Y.append(reverse_dict[label])
+                    Y.append(reverse_dict[label][0])
                     entities.append(label)
         
         save_data_with_pickle(X_PATH, X)

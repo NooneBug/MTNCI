@@ -18,7 +18,7 @@ PATH_TO_EDGELIST = PICKLES_PATH + 'dbpedia_edgelist_no_closure.tsv'
 CORPUS_PATH = '/datahdd/vmanuel/ELMo/Corpora/shuffled_text_with_words'
 LOG = 'MEGAlog_4_3.txt'
 
-FILE_ID = '12_3_v2_'
+FILE_ID = '16_3'
 
 GRAPH_PATH = PICKLES_PATH + FILE_ID + 'graph'
 ENTITY_DICT_PATH = PICKLES_PATH + FILE_ID +'entity_dict'
@@ -208,6 +208,6 @@ if __name__ == "__main__":
 
     void_types = [t for t, v in found_entity_dict.items() if v == []]
 
-    pruned_G = remove_void_types(G, void_types)
+    pruned_G = remove_void_types(pruned_G, void_types)
     save_data_with_pickle(FINAL_TREE_PATH, pruned_G)
     print("the pruned graph is a tree: {}, saved in {}".format(nx.is_tree(pruned_G), FINAL_TREE_PATH))

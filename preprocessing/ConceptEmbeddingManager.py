@@ -123,7 +123,7 @@ class HyperEEmbeddingManager(ConceptEmbedding):
         print(os.getcwd())
         os.system('mv {} ../../source_files/embeddings/'.format(embedding_name + '_to_parse'))
 
-        self.embedding = self.import_stanford_hyperbolic(PATH = self.save_path + '_to_parse')
+        self.embedding, tau = self.import_stanford_hyperbolic(PATH = self.save_path + '_to_parse')
         save_data_with_pickle(self.save_path, self.embedding)
         
     def import_stanford_hyperbolic(self, PATH):
