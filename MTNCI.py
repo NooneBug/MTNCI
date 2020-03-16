@@ -104,7 +104,111 @@ class MTNCI(nn.Module):
         for k in prediction_dict.keys():
             loss += prediction_dict[k] * self.llambda[k]
         
-        return loss
+        return torch.sum(loss)
+    
+    def set_hyperparameters(self, epochs, weighted = False):
+        self.epochs = epochs
+        self.weighted = weighted
+
+
+    def train(self):
+
+        distributional_prediction_manager = Prediction()
+        distributional_prediction_manager.select_loss(distributional_prediction_manager.LOSSES['cosine_dissimilarity'])
+
+        hyperbolic_prediction_manager = Prediction()
+        hyperbolic_prediction_manager.select_loss(distributional_prediction_manager.LOSSES['hyperbolic_distance'])
+
+        for epoch in range(epochs):
+            train_it = iter(self.trainloader)
+            val_it = iter(self.valloader)
+            
+            train_loss_SUM = 0
+            val_loss_SUM = 0
+            
+            distributional_train_loss_SUM = 0
+            distributional_val_loss_SUM = 0
+            
+            hyperbolic_train_loss_SUM = 0
+            hyperbolic_val_loss_SUM = 0
+            
+            for batch_iteration in range(len(self.trainloader)):
+                x, labels, targets = next(train_it)
+                
+                ######################
+                ####### TRAIN ########
+                ######################
+                
+                
+                self.optimizer.zero_grad()
+                
+                self.train()
+                
+                output = self(x)
+
+                distributional_prediction_manager.set_prediction(predictions = output[0],
+                                                                 true_values = targets['distributional'])
+
+                hyperbolic_prediction_manager.set_prediction(predictions = output[1], 
+                                                             true_values = targets['hyperbolic'])                
+
+
+                distributional_train_loss = distributional_prediction_manager.compute_loss()
+                
+                hyperbolic_train_loss = hyperbolic_prediction_manager.compute_loss()
+
+                distributional_train_loss_SUM += torch.sum(distributional_train_loss * self.llambdas['distributional']).item()
+                hyperbolic_train_loss_SUM += torch.sum(hyperbolic_train_loss * (1 - self.llambdas['hyperbolic'])).item()
+                
+                train_loss = self.get_multitask_loss({'distributional': distributional_train_loss, 
+                                                      'hyperbolic': hyperbolic_train_loss})
+                
+                train_loss_SUM += train_loss.item()
+                train_loss.backward()
+                optimizer.step()
+                
+                
+            else:
+
+                ######################
+                ######## VAL #########
+                ######################
+                
+                with torch.no_grad():
+                    model.eval()   
+                    
+                    for batch_iteration in range(len(valloader)):
+                        x, labels, targets = next(val_it)
+
+
+                        output = self(x)
+
+                        distributional_prediction_manager.set_prediction(predictions = output[0],
+                                                                        true_values = targets['distributional'])
+
+                        hyperbolic_prediction_manager.set_prediction(predictions = output[1], 
+                                                                    true_values = targets['hyperbolic']) 
+                        
+                        distributional_val_loss = distributional_prediction_manager.compute_loss()
+                        
+                        hyperbolic_val_loss = hyperbolic_prediction_manager.compute_loss()
+                        
+                        distributional_val_loss_SUM += torch.sum(distributional_val_loss * self.llambdas['distributional']).item()
+                        hyperbolic_val_loss_SUM += torch.sum(hyperbolic_val_loss * (1 - self.llambdas['hyperbolic'])).item()
+                        
+                        val_loss = self.get_multitask_loss({'distributional': distributional_val_loss, 
+                                                            'hyperbolic': hyperbolic_val_loss})
+                        
+                        val_loss_SUM += val_loss.item()
+                
+            print('{:^15}'.format('epoch {:^3}/{:^3}'.format(epoch, epochs)))
+            print('{:^15}'.format('Train loss: {:.4f}, Val loss: {:.4f}'.format(train_loss_SUM/len(c.X_train), 
+                                                                                val_loss_SUM/len(c.X_val)
+                                                                            )
+                                )
+                )
+      
+
 
 class Prediction:
 

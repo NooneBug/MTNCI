@@ -82,16 +82,11 @@ if __name__ == "__main__":
     model.set_lambda(llambdas = {'hyperbolic' : 1 - llambda,
                                  'distributional': llambda)
 
-    distributional_prediction_manager = Prediction()
-    distributional_prediction_manager.select_loss(distributional_prediction_manager.LOSSES['cosine_dissimilarity'])
-
-    hyperbolic_prediction_manager = Prediction()
-    hyperbolic_prediction_manager.select_loss(distributional_prediction_manager.LOSSES['hyperbolic_distance'])
-
     epochs = 20
 
     model.set_hyperparameters(epochs = epochs)
 
+    model.train()
 
     # weighted = False
 
@@ -105,110 +100,8 @@ if __name__ == "__main__":
     # epochs_no_improve = 0
     # n_epochs_stop = 20
     # min_val_losses = 100
-    # epochs = 2
 
     # def get_weight(l1, l2):
     #     return 2
 
-    # for epoch in range(epochs):
-    #     train_it = iter(trainloader)
-    #     val_it = iter(valloader)
-        
-    #     train_loss_SUM = 0
-    #     val_loss_SUM = 0
-        
-        
-    #     distributional_train_loss_SUM = 0
-    #     distributional_val_loss_SUM = 0
-        
-    #     hyperbolic_train_loss_SUM = 0
-    #     hyperbolic_val_loss_SUM = 0
-        
-    #     for batch_iteration in range(len(trainloader)):
-    #         x, labels, targets = next(train_it)
-            
-    #         ######################
-    #         ####### TRAIN ########
-    #         ######################
-            
-            
-    #         optimizer.zero_grad()
-    #         model.train()
-            
-    #         output = model(x)
-            
-    #         output_dict = {'distributional' : output[0],
-    #                     'hyperbolic' : output[1]}
-            
-    #         distributional_train_loss = cosine_loss(output_dict['distributional'], 
-    #                                                 targets['distributional'])
-            
-    #         hyperbolic_train_loss, r = hyperbolic_loss(output_dict['hyperbolic'], 
-    #                                                 targets['hyperbolic'], 
-    #                                                 regul = regul)
-            
-    #         if weighted:
-    #             labels_weights_train = 3
-    #             weights = 3
-    #             weights_train = get_weight(labels, labels_weights_train)
-    #             weights_train_SUM += torch.sum(weights).item()
-    #             train_loss = torch.sum((distributional_train_loss * llambda + hyperbolic_train_loss * (1 - llambda)) * weights)
-    #             distributional_train_loss_SUM += torch.sum(distributional_train_loss * llambda * weights).item()
-    #             hyperbolic_train_loss_SUM += torch.sum(hyperbolic_train_loss * (1 - llambda) * weights).item()
-
-    #         else:
-    #             train_loss = torch.sum(distributional_train_loss * llambda + hyperbolic_train_loss * (1 - llambda))
-    #             distributional_train_loss_SUM += torch.sum(distributional_train_loss * llambda).item()
-    #             hyperbolic_train_loss_SUM += torch.sum(hyperbolic_train_loss * (1 - llambda)).item()
-            
-    #         train_loss_SUM += train_loss.item()
-    #         train_loss.backward()
-    #         optimizer.step()
-            
-            
-    #     else:
-
-    #         ######################
-    #         ######## VAL #########
-    #         ######################
-            
-    #         with torch.no_grad():
-    #             model.eval()   
-                
-    #             for batch_iteration in range(len(valloader)):
-    #                 x, labels, targets = next(val_it)
-        
-    #                 output = model(x)
-    #                 output_dict = {'distributional' : output[0],
-    #                             'hyperbolic' : output[1]}
-                    
-    #                 distributional_val_loss = cosine_loss(output_dict['distributional'],
-    #                                                     targets['distributional'])
-            
-    #                 hyperbolic_val_loss, r = hyperbolic_loss(output_dict['hyperbolic'], 
-    #                                                         targets['hyperbolic'], 
-    #                                                         regul = [0, 0, 1])
-                    
-                    
-    #                 if weighted:
-    #                     labels_weights_val = 3
-    #                     weights = 3
-    #                     weights_val = get_weight(labels, labels_weights_val)
-    #                     weights_val_SUM += torch.sum(weights).item()   
-    #                     val_loss = torch.sum((distributional_val_loss * llambda + hyperbolic_val_loss * (1 - llambda)) * weights)
-    #                     distributional_val_loss_SUM += torch.sum(distributional_val_loss * llambda * weights).item()
-    #                     hyperbolic_val_loss_SUM += torch.sum(hyperbolic_val_loss * (1 - llambda) * weights).item()
-
-    #                 else:
-    #                     val_loss = torch.sum(distributional_val_loss * llambda + hyperbolic_val_loss * (1 - llambda))
-    #                     distributional_val_loss_SUM += torch.sum(distributional_val_loss * llambda).item()
-    #                     hyperbolic_val_loss_SUM += torch.sum(hyperbolic_val_loss * (1 - llambda)).item()
-    #                 val_loss_SUM += val_loss.item()    
-            
-    #     print('{:^15}'.format('epoch {:^3}/{:^3}'.format(epoch, epochs)))
-    #     print('{:^15}'.format('Train loss: {:.4f}, Val loss: {:.4f}'.format(train_loss_SUM/len(c.X_train), 
-    #                                                                         val_loss_SUM/len(c.X_val)
-    #                                                                     )
-    #                         )
-    #         )
-            
+    #       
