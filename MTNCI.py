@@ -1,8 +1,10 @@
 from torch import nn
+import torch
 import geoopt
-from geooptModules import MobiusLinear
+from geooptModules import MobiusLinear, mobius_linear, create_ball
 from torch.utils.data import Dataset, DataLoader
 from geoopt.optim import RiemannianAdam
+from tensorBoardManager import TensorBoardManager
 
 
 class CommonLayer(nn.Module):
@@ -62,14 +64,14 @@ class RegressionOutput(nn.Module):
 
 class MTNCI(nn.Module):    
     def __init__(self,
-                input_d, 
-                dims = None,
-                out_spec = [{'manifold':'euclid', 'dim':[10]},
-                            {'manifold':'poincare', 'dim':[2]}],
-                dropout_prob = 0.2):
+                 input_d, 
+                 dims = None,
+                 out_spec = [{'manifold':'euclid', 'dim':[10]},
+                             {'manifold':'poincare', 'dim':[2]}],
+                 dropout_prob = 0.2, 
+                ):
         
         super().__init__()
-        
         self.common_network = CommonLayer(input_d=input_d,
                                         dims = dims,
                                         dropout_prob=dropout_prob)
@@ -80,7 +82,10 @@ class MTNCI(nn.Module):
             self.out_layers.append(RegressionOutput(hidden_dim=dims[-1],
                                             dims=spec['dim'],
                                             manifold = spec['manifold']))
+
         
+
+    
         
     def forward(self, x):
         x = self.common_network(x)
@@ -92,6 +97,14 @@ class MTNCI(nn.Module):
         
         return output
 
+    def initialize_tensorboard_manager(self, name):
+        self.tensorBoardManager = TensorBoardManager(name)
+        
+    def set_device(self, device):
+        self.device = device
+    
+    def set_dataset_manager(self, datasetManagaer):
+        self.datasetManager = datasetManagaer
 
     def set_optimizer(self, optimizer):
         self.optimizer = optimizer
@@ -102,7 +115,7 @@ class MTNCI(nn.Module):
     def get_multitask_loss(self, prediction_dict):
         loss = 0
         for k in prediction_dict.keys():
-            loss += prediction_dict[k] * self.llambda[k]
+            loss += prediction_dict[k] * self.llambdas[k]
         
         return torch.sum(loss)
     
@@ -111,17 +124,21 @@ class MTNCI(nn.Module):
         self.weighted = weighted
 
 
-    def train(self):
+    def train_model(self):
 
-        distributional_prediction_manager = Prediction()
+        train_length = len(self.datasetManager.X_train)
+        val_length = len(self.datasetManager.X_val)
+
+        
+        distributional_prediction_manager = Prediction(device = self.device)
         distributional_prediction_manager.select_loss(distributional_prediction_manager.LOSSES['cosine_dissimilarity'])
 
-        hyperbolic_prediction_manager = Prediction()
+        hyperbolic_prediction_manager = Prediction(device = self.device)
         hyperbolic_prediction_manager.select_loss(distributional_prediction_manager.LOSSES['hyperbolic_distance'])
 
-        for epoch in range(epochs):
-            train_it = iter(self.trainloader)
-            val_it = iter(self.valloader)
+        for epoch in range(self.epochs):
+            train_it = iter(self.datasetManager.trainloader)
+            val_it = iter(self.datasetManager.valloader)
             
             train_loss_SUM = 0
             val_loss_SUM = 0
@@ -132,7 +149,7 @@ class MTNCI(nn.Module):
             hyperbolic_train_loss_SUM = 0
             hyperbolic_val_loss_SUM = 0
             
-            for batch_iteration in range(len(self.trainloader)):
+            for batch_iteration in range(len(self.datasetManager.trainloader)):
                 x, labels, targets = next(train_it)
                 
                 ######################
@@ -165,9 +182,8 @@ class MTNCI(nn.Module):
                 
                 train_loss_SUM += train_loss.item()
                 train_loss.backward()
-                optimizer.step()
-                
-                
+                self.optimizer.step()
+           
             else:
 
                 ######################
@@ -175,9 +191,9 @@ class MTNCI(nn.Module):
                 ######################
                 
                 with torch.no_grad():
-                    model.eval()   
+                    self.eval()   
                     
-                    for batch_iteration in range(len(valloader)):
+                    for batch_iteration in range(len(self.datasetManager.valloader)):
                         x, labels, targets = next(val_it)
 
 
@@ -200,24 +216,53 @@ class MTNCI(nn.Module):
                                                             'hyperbolic': hyperbolic_val_loss})
                         
                         val_loss_SUM += val_loss.item()
-                
-            print('{:^15}'.format('epoch {:^3}/{:^3}'.format(epoch, epochs)))
-            print('{:^15}'.format('Train loss: {:.4f}, Val loss: {:.4f}'.format(train_loss_SUM/len(c.X_train), 
-                                                                                val_loss_SUM/len(c.X_val)
+            
+            train_loss_value = train_loss_SUM/train_length
+            val_loss_value = val_loss_SUM/val_length
+
+            hyperbolic_train_loss_value = hyperbolic_train_loss_SUM/train_length
+            hyperbolic_val_loss_value = hyperbolic_val_loss_SUM/val_length
+
+            distributional_train_loss_value = distributional_train_loss_SUM/train_length
+            distributional_val_loss_value = distributional_val_loss_SUM/val_length
+
+
+            losses_dict = {'Hyperbolic Losses': {'Train': hyperbolic_train_loss_value, 
+                                                 'Val': hyperbolic_val_loss_value},
+                           'Distributional Losses':  {'Train': distributional_train_loss_value,
+                                                      'Val': distributional_val_loss_value},
+                           'MTL-Losses-AA': {'Train': train_loss_value,
+                                          'Val': val_loss_value}
+            }
+
+
+            self.log_losses(losses_dict = losses_dict, epoch = epoch + 1)
+
+            print('{:^15}'.format('epoch {:^3}/{:^3}'.format(epoch, self.epochs)))
+            print('{:^15}'.format('Train loss: {:.4f}, Val loss: {:.4f}'.format(train_loss_SUM/len(self.datasetManager.X_train), 
+                                                                                val_loss_SUM/len(self.datasetManager.X_val)
                                                                             )
                                 )
                 )
-      
+    def log_losses(self, losses_dict, epoch):
+        for k, subdict in losses_dict.items():
+            list_of_losses = [subdict['Train'], subdict['Val']]
+
+            self.tensorBoardManager.log_losses(main_label= k, 
+                                                list_of_losses = list_of_losses,
+                                                list_of_names = ['Train', 'Val'], 
+                                                epoch = epoch)
 
 
 class Prediction:
 
-    def __init__(self):
+    def __init__(self, device):
         self.LOSSES = {'cosine_dissimilarity': 'COSD',
                        'hyperbolic_distance': 'HYPD',
-                       'regularized_hyperbolic_distance': 'RHYPD'
-        
+                       'regularized_hyperbolic_distance': 'RHYPD',
+                       'hyperboloid_distance' : 'LORENTZD'
         }
+        self.device = device
 
     def set_prediction(self, predictions, true_values):
         self.predictions = predictions
@@ -225,23 +270,30 @@ class Prediction:
     
     def select_loss(self, loss_name):
         if loss_name == self.LOSSES['cosine_dissimilarity']:
-            self.selected_loss = cosineLoss()
+            self.selected_loss = cosineLoss(device = self.device)
         elif loss_name == self.LOSSES['hyperbolic_distance']:
-            self.select_loss = poincareDistanceLoss()
+            self.selected_loss = poincareDistanceLoss(device = self.device)
         elif loss_name == self.LOSSES['regularized_hyperbolic_distance']:
-            self.select_loss = regularizedPoincareDistanceLoss()
+            self.selected_loss = regularizedPoincareDistanceLoss(device = self.device)
+        # elif loss_name == self.LOSSES['hyperboloid_distance']:
+        #     self.selected_loss = lorentzDistanceLoss(device = self.device)
 
     def compute_loss(self):
-        self.select_loss.compute_loss(true = self.true_values, 
-                                      pred = self.predictions)
+        return self.selected_loss.compute_loss(true = self.true_values,
+                                             pred = self.predictions)
+        
 
 
 class Loss():
-    def compute_loss(self):
 
+    def __init__(self, device):
+        self.device = device
+
+    def compute_loss(self):
+        pass
 
 class cosineLoss(Loss):
-    def compute_loss(self):
+    def compute_loss(self, true, pred):
         cossim = torch.nn.CosineSimilarity(dim = 1)
         return 1 - cossim(true, pred)
 
@@ -258,14 +310,14 @@ class poincareDistanceLoss(Loss):
         denom = left_denom * right_denom
 
         frac = numerator/denom
-        acos = acosh(1  + frac)
+        acos = self.acosh(1  + frac)
         
         return acos
 
-    def acosh(x):
+    def acosh(self, x):
         return torch.log(x + torch.sqrt(x**2-1))
 
-    def mse(y_pred, y_true, regul):    
+    def mse(self, y_pred, y_true):    
         mse_loss = nn.MSELoss()
         return mse_loss(y_pred, y_true)
 
@@ -275,76 +327,35 @@ class regularizedPoincareDistanceLoss(poincareDistanceLoss):
         self.regul = regul
 
     def compute_loss(self, true, pred):
-        acosh = super().compute_loss(true = true, pred = pred)
+        acos = super().compute_loss(true = true, pred = pred)
 
-        l0 = torch.tensor(1., device = device)
-        l1 = torch.tensor(1., device = device)
+        l0 = torch.tensor(1., device = self.device)
+        l1 = torch.tensor(1., device = self.device)
         
-        if sum(regul) > 1:
+        if sum(self.regul) > 1:
             
-            true_perm = y_true[torch.randperm(y_true.size()[0])]
+            true_perm = true[torch.randperm(true.size()[0])]
             
-            l0 = torch.abs(hyperbolic_loss(y_pred, true_perm, regul=[0, 0, 1])[0] - hyperbolic_loss(y_true, true_perm, regul = [0, 0, 1])[0])
-            l1 = mse(y_pred, y_true, 0)
+            l0 = torch.abs(super().compute_loss(pred, true_perm) - super.compute_loss(true, true_perm))
+            l1 = self.mse(pred, true)
         
         return acos**self.regul[2] + l0 * self.regul[0] + l1 * self.regul[1]
 
+# class lorentzDistanceLoss(Loss):
 
-class MobiusLinear(torch.nn.Linear):
-    def __init__(self, *args, nonlin=None, ball=None, c=1.0, **kwargs):
-        super().__init__(*args, **kwargs)
-        # for manifolds that have parameters like Poincare Ball
-        # we have to attach them to the closure Module.
-        # It is hard to implement device allocation for manifolds in other case.
-        self.ball = create_ball(ball, c)
-        if self.bias is not None:
-            self.bias = geoopt.ManifoldParameter(self.bias, manifold=self.ball)
-        self.nonlin = nonlin
-        self.reset_parameters()
+#     def acosh(self, x):
+#         return torch.log(x + torch.sqrt(x**2-1))
 
-    def forward(self, input):
-        return mobius_linear(
-            input,
-            weight=self.weight,
-            bias=self.bias,
-            nonlin=self.nonlin,
-            ball=self.ball,
-        )
+#     def hyperboloid_projection(v, r = 1):
+#         n = norm(v)
+#         t = [(r**2 + (n ** 2)) / (r**2 - (n ** 2))]
+#         projected = [(2 * r**2 * vs) /(r**2 - (n ** 2)) for vs in v]
+#         projected.extend(t)
+#         return np.array(projected)
 
-    @torch.no_grad()
-    def reset_parameters(self):
-        torch.nn.init.eye_(self.weight)
-        self.weight.add_(torch.rand_like(self.weight).mul_(1e-3))
-        if self.bias is not None:
-            self.bias.zero_()
+#     def inverse_projection(v, r):
+#         return np.array([vs/(r**2 + v[-1]) for vs in v[:-1]])
 
-
-# package.nn.functional.py
-def mobius_linear(input, weight, bias=None, nonlin=None, *, ball: geoopt.PoincareBall):
-    output = ball.mobius_matvec(weight, input)
-    if bias is not None:
-        output = ball.mobius_add(output, bias)
-    if nonlin is not None:
-        output = ball.logmap0(output)
-        output = nonlin(output)
-        output = ball.expmap0(output)
-    return output
-
-def create_ball(ball=None, c=None):
-    """
-    Helper to create a PoincareBall.
-    Sometimes you may want to share a manifold across layers, e.g. you are using scaled PoincareBall.
-    In this case you will require same curvature parameters for different layers or end up with nans.
-    Parameters
-    ----------
-    ball : geoopt.PoincareBall
-    c : float
-    Returns
-    -------
-    geoopt.PoincareBall
-    """
-    if ball is None:
-        assert c is not None, "curvature of the ball should be explicitly specified"
-        ball = geoopt.PoincareBall(c)
-    # else trust input
-    return ball
+#     def compute_loss(self, pred, true):
+#         hyperboloid_pred = self.hyperboloid_projection(v = pred)
+        

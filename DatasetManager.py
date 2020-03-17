@@ -5,13 +5,18 @@ import time
 from collections import defaultdict
 from tqdm import tqdm
 import random
+import numpy as np
+import torch
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
-sys.path.append('./preprocessing/')
-from utils import load_data_with_pickle, save_data_with_pickle
-from CorpusManager import CorpusManager
+from preprocessing.utils import load_data_with_pickle, save_data_with_pickle
+from preprocessing.CorpusManager import CorpusManager
+from torch.utils.data import Dataset, DataLoader
 
 class MTNCIDataset(Dataset):
-        def __init__(self, vector_list, label_list, target_list):
+        def __init__(self, vector_list, label_list, target_list, device):
             self.X = torch.tensor(vector_list, device = device)
             self.labels = torch.tensor(label_list, device = device)
             self.target_list = {k: torch.tensor(x, dtype = torch.float64, device = device) for k, x in target_list.items()}
@@ -29,6 +34,9 @@ class DatasetManager():
 
     def __init__(self, id):
         self.file_id = id 
+
+    def set_device(self, device):
+        self.device = device
 
     def setup_print_times(self, keywords):
         self.keywords = keywords
@@ -131,12 +139,8 @@ class DatasetManager():
                     self.X_val.append(x)
                     self.Y_val.append(y)
                     self.E_val.append(e)
-    
-        print('Train: {} vectors, Val: {} vectors, Test: {} vectors'.format(len(self.Y_train),
-                                                                            len(self.Y_val),
-                                                                            len(self.Y_test)
-                                                                            )
-             )
+
+        
         
     def find_and_filter_not_present(self):
         print('Initial dataset dimension: ')
@@ -176,7 +180,7 @@ class DatasetManager():
         else:
             return [x[0] for i, x in enumerate(A) if i < frac], [x[1] for i, x in enumerate(A) if i < frac], [x[2] for i, x in enumerate(A) if i < frac]
 
-    def save_datasets(self, save_path):
+    def save_datasets(self, save_path, ID):
 
         save_data_with_pickle(save_path + ID + 'filtered_X_train', self.X_train)
         save_data_with_pickle(save_path + ID + 'filtered_X_val', self.X_val)
@@ -203,18 +207,55 @@ class DatasetManager():
             print('{:^25}{:^5}|{:^25}{:^5}|{:^25}{:^5}'.format(x[0], x[1], y[0], y[1], z[0], z[1]))
 
 
-    def get_numeric_label(labels):
+    def plot_datasets(self):
+        Tr = Counter(self.Y_train).most_common()
+        Va = Counter(self.Y_val).most_common()
+        Te = Counter(self.Y_test).most_common()
+
+        Tr = {t[0]: t[1] for t in Tr}
+        Va = {t[0]: t[1] for t in Va}
+        Te = {t[0]: t[1] for t in Te}
+
+        # set width of bar
+        barWidth = 0.25
+        
+        # set height of bar
+        bars1 = [t for t in Tr.values()]
+        bars2 = [Va[k] for k in Tr.keys()]
+        bars3 = [Te[k] for k in Tr.keys()]
+        
+        # Set position of bar on X axis
+        r1 = np.arange(len(Tr))
+        r2 = [x + barWidth for x in r1]
+        r3 = [x + barWidth for x in r2]
+        
+        # Make the plot
+        plt.figure(figsize=(25, 25))
+        plt.bar(r1, bars1, color='#7f6d5f', width=barWidth, edgecolor='white', label='Train')
+        plt.bar(r2, bars2, color='#557f2d', width=barWidth, edgecolor='white', label='Validation')
+        plt.bar(r3, bars3, color='#2d7f5e', width=barWidth, edgecolor='white', label='Test')
+        
+        # Add xticks on the middle of the group bars
+        plt.xlabel(' # of vectors x classes different dataset ', fontweight='bold')
+        plt.xticks([r + barWidth for r in range(len(bars1))], list(Tr.keys()), rotation = 75)
+        plt.yscale('log')
+        
+        # Create legend & Show graphic
+        plt.legend()
+        plt.savefig('./PLOT.png')
+
+    def get_numeric_label(self, labels):
         return [self.numeric_label_map[y] for y in labels]
 
     def compute_numeric_labels(self):
         self.numeric_label_map = {y: x for x, y in enumerate(set(self.Y_train))}
-        self.inverse_numeric_label_map = {v:k for k,v in numeric_label_map.items()}
+        self.inverse_numeric_label_map = {v:k for k,v in self.numeric_label_map.items()}
 
     def create_numeric_dataset(self):
         self.compute_numeric_labels()
-        self.Y_numeric_train = get_numeric_label(self.Y_train)
-        self.Y_numeric_test = get_numeric_label(self.Y_test)
-        self.Y_numeric_val = get_numeric_label(self.Y_val)
+        self.Y_numeric_train = self.get_numeric_label(self.Y_train)
+        self.Y_numeric_test = self.get_numeric_label(self.Y_test)
+        self.Y_numeric_val = self.get_numeric_label(self.Y_val)
 
     def create_aligned_dataset(self, in_place = True):
 
@@ -223,15 +264,15 @@ class DatasetManager():
         aligned_y_val = {k:[] for k in self.concept_embeddings.keys()}
 
         for label in self.Y_train:
-            for k, emb in embeddings.items():
+            for k, emb in self.concept_embeddings.items():
                 aligned_y_train[k].append(emb[label])
         
         for label in self.Y_test:
-            for k, emb in embeddings.items():
+            for k, emb in self.concept_embeddings.items():
                 aligned_y_test[k].append(emb[label])
 
         for label in self.Y_val:
-            for k, emb in embeddings.items():
+            for k, emb in self.concept_embeddings.items():
                 aligned_y_val[k].append(emb[label])
         
         
@@ -253,18 +294,21 @@ class DatasetManager():
 
     
     def create_dataloaders(self, batch_sizes = {'train': 512, 'test': 512, 'val': 512}):
-        trainset = MyDataset(self.X_train,
-                             self.y_numeric_train,
-                             self.aligned_y_train) 
+        trainset = MTNCIDataset(self.X_train,
+                                self.Y_numeric_train,
+                                self.aligned_y_train,
+                                device = self.device) 
 
         self.trainloader = DataLoader(trainset, batch_size=batch_sizes['train'], shuffle=True)
 
-        testset = MyDataset(self.X_test,
-                            self.y_numeric_test,
-                            self.aligned_y_test) 
+        testset = MTNCIDataset(self.X_test,
+                               self.Y_numeric_test,
+                               self.aligned_y_test,
+                               device = self.device) 
         self.testloader = DataLoader(testset, batch_size=batch_sizes['test'], shuffle=False)
 
-        valset = MyDataset(self.X_val,
-                           self.y_numeric_val,
-                           self.aligned_y_val)
+        valset = MTNCIDataset(self.X_val,
+                              self.Y_numeric_val,
+                              self.aligned_y_val,
+                              device = self.device)
         self.valloader = DataLoader(valset, batch_size=batch_sizes['val'], shuffle=True)   

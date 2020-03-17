@@ -40,6 +40,7 @@ if __name__ == "__main__":
     np.random.seed(236451)
 
     datasetManager = DatasetManager(FILE_ID)
+    datasetManager.set_device(device)
     # load dataset
     datasetManager.load_entities_data(X_PATH = X_PATH,
                                       Y_PATH = Y_PATH,
@@ -52,27 +53,39 @@ if __name__ == "__main__":
     datasetManager.shuffle_dataset_and_sample(fraction = 0.1, in_place = True)
 
     datasetManager.split_data_by_unique_entities(exclude_min_threshold=100)
-    
+    print('Train: {} vectors, Val: {} vectors, Test: {} vectors'.format(len(datasetManager.Y_train),
+                                                                        len(datasetManager.Y_val),
+                                                                        len(datasetManager.Y_test)
+                                                                        )
+             )
+
+    # datasetManager.plot_datasets()
+
     PICKLE_PATH = '../source_files/datasets/'
     ID = '16_3_100_0.1'
-
+    print('... saving dataset ...')
     datasetManager.save_datasets(save_path = PICKLE_PATH, ID = ID)
     # datasetManager.print_statistic_on_dataset()
-
-    datasetManager.create_numeric_datasets()
-
+    print('... creating numeric dataset ...')
+    datasetManager.create_numeric_dataset()
+    print('... creating aligned dataset ...')
     datasetManager.create_aligned_dataset()
-
+    print('... creating dataloaders ...')
     datasetManager.create_dataloaders()
 
 
-    out_spec = [{'manifold':'euclid', 'dim':[64, len(explicit_y_train['distributional'][0])]},
-                {'manifold':'poincare', 'dim':[128, len(explicit_y_train['hyperbolic'][0])]}]
+    out_spec = [{'manifold':'euclid', 'dim':[64, len(datasetManager.aligned_y_train['distributional'][0])]},
+                {'manifold':'poincare', 'dim':[128, len(datasetManager.aligned_y_train['hyperbolic'][0])]}]
 
     model = MTNCI(input_d=len(datasetManager.X_train[0]),
                 out_spec = out_spec,
                 dims = [256])
 
+    model.set_dataset_manager(datasetManager)
+    
+    model.initialize_tensorboard_manager('simple MTL loss')
+
+    model.set_device(device)
     lr = 1e-3
     
     model.set_optimizer(optimizer = RiemannianAdam(model.parameters(), lr = lr))
@@ -80,13 +93,13 @@ if __name__ == "__main__":
     llambda = 0.05
 
     model.set_lambda(llambdas = {'hyperbolic' : 1 - llambda,
-                                 'distributional': llambda)
+                                 'distributional': llambda})
 
     epochs = 20
 
     model.set_hyperparameters(epochs = epochs)
-
-    model.train()
+    print('... training model ... ')
+    model.train_model()
 
     # weighted = False
 
