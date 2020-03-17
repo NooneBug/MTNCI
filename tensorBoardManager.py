@@ -6,7 +6,7 @@ class TensorBoardManager():
 
     def __init__(self, name):
         shutil.rmtree('runs', ignore_errors=True)
-        self.writer = SummaryWriter('runs/MTNCI/{}'.format(name))
+        self.writer = SummaryWriter('runs/{}'.format(name))
 
 
     def log_loss(self, label, loss_value, x_index):

@@ -7,13 +7,13 @@ from CorpusManager import CorpusManager
 # PATH in which utility files are stored
 PICKLES_PATH = '../../source_files/pickles/'
 
-FILE_ID = '16_3'
+FILE_ID = 'TEST'
+LENGTH = 1000
 
 OCCURRENCE_OF_ENTITIES_PATH = PICKLES_PATH + FILE_ID + 'word_occurrence_indexes'
 ENTITY_DICT_PATH = PICKLES_PATH + FILE_ID + 'found_entity_dict'
 
 CORPUS_PATH = '/datahdd/vmanuel/ELMo/Corpora/shuffled_text_with_words'
-LENGTH = 100000
 
 DATA_PATH = '../../source_files/vectors/'
 X_PATH = DATA_PATH + FILE_ID + 'X'

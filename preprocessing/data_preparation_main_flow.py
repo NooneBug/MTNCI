@@ -18,7 +18,7 @@ PATH_TO_EDGELIST = PICKLES_PATH + 'dbpedia_edgelist_no_closure.tsv'
 CORPUS_PATH = '/datahdd/vmanuel/ELMo/Corpora/shuffled_text_with_words'
 LOG = 'MEGAlog_4_3.txt'
 
-FILE_ID = '16_3'
+FILE_ID = 'TEST'
 
 GRAPH_PATH = PICKLES_PATH + FILE_ID + 'graph'
 ENTITY_DICT_PATH = PICKLES_PATH + FILE_ID +'entity_dict'
@@ -27,7 +27,7 @@ WORD_OCCURRENCE_INDEX_PATH = PICKLES_PATH + FILE_ID + 'word_occurrence_indexes'
 FOUND_ENTITY_DICT_PATH = PICKLES_PATH + FILE_ID + 'found_entity_dict'
 FINAL_TREE_PATH = PICKLES_PATH + FILE_ID + 'final_tree'
 
-LENGTH = 100000
+LENGTH = 1000
 
 avoid_multilabeling = True
 experimental = False
@@ -132,7 +132,7 @@ if __name__ == "__main__":
     # retrieve entities names
     e = EntityNameRetriever()
     
-    FRAC = 1 
+    FRAC = 0.01 
     # random.seed(236451)
     try:
         print('load entity dict from :{}'.format(ENTITY_DICT_PATH))

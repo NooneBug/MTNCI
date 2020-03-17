@@ -5,7 +5,7 @@ from ConceptEmbeddingManager import HyperEEmbeddingManager, Type2VecEmbeddingMan
 # PATH in which utility files are stored
 PICKLES_PATH = '../../source_files/pickles/'
 
-FILE_ID = '16_3'
+FILE_ID = 'TEST'
 
 FINAL_TREE_PATH = PICKLES_PATH + FILE_ID + 'final_tree'
 

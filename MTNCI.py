@@ -5,7 +5,7 @@ from geooptModules import MobiusLinear, mobius_linear, create_ball
 from torch.utils.data import Dataset, DataLoader
 from geoopt.optim import RiemannianAdam
 from tensorBoardManager import TensorBoardManager
-
+from abc import ABC, abstractmethod
 
 class CommonLayer(nn.Module):
     def __init__(self, 
@@ -115,9 +115,8 @@ class MTNCI(nn.Module):
     def get_multitask_loss(self, prediction_dict):
         loss = 0
         for k in prediction_dict.keys():
-            loss += prediction_dict[k] * self.llambdas[k]
-        
-        return torch.sum(loss)
+            loss += torch.sum(prediction_dict[k] * self.llambdas[k])
+        return loss
     
     def set_hyperparameters(self, epochs, weighted = False):
         self.epochs = epochs
@@ -175,7 +174,7 @@ class MTNCI(nn.Module):
                 hyperbolic_train_loss = hyperbolic_prediction_manager.compute_loss()
 
                 distributional_train_loss_SUM += torch.sum(distributional_train_loss * self.llambdas['distributional']).item()
-                hyperbolic_train_loss_SUM += torch.sum(hyperbolic_train_loss * (1 - self.llambdas['hyperbolic'])).item()
+                hyperbolic_train_loss_SUM += torch.sum(hyperbolic_train_loss * (self.llambdas['hyperbolic'])).item()
                 
                 train_loss = self.get_multitask_loss({'distributional': distributional_train_loss, 
                                                       'hyperbolic': hyperbolic_train_loss})
@@ -227,11 +226,11 @@ class MTNCI(nn.Module):
             distributional_val_loss_value = distributional_val_loss_SUM/val_length
 
 
-            losses_dict = {'Hyperbolic Losses': {'Train': hyperbolic_train_loss_value, 
+            losses_dict = {'Losses/Hyperbolic Losses': {'Train': hyperbolic_train_loss_value, 
                                                  'Val': hyperbolic_val_loss_value},
-                           'Distributional Losses':  {'Train': distributional_train_loss_value,
+                           'Losses/Distributional Losses':  {'Train': distributional_train_loss_value,
                                                       'Val': distributional_val_loss_value},
-                           'MTL-Losses-AA': {'Train': train_loss_value,
+                           'Losses/MTL-Losses': {'Train': train_loss_value,
                                           'Val': val_loss_value}
             }
 
@@ -252,7 +251,6 @@ class MTNCI(nn.Module):
                                                 list_of_losses = list_of_losses,
                                                 list_of_names = ['Train', 'Val'], 
                                                 epoch = epoch)
-
 
 class Prediction:
 
@@ -280,15 +278,15 @@ class Prediction:
 
     def compute_loss(self):
         return self.selected_loss.compute_loss(true = self.true_values,
-                                             pred = self.predictions)
-        
+                                               pred = self.predictions)
+    
 
-
-class Loss():
+class Loss(ABC):
 
     def __init__(self, device):
         self.device = device
 
+    @abstractmethod
     def compute_loss(self):
         pass
 
