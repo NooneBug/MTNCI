@@ -3,7 +3,7 @@ from MTNCI import MTNCI, Prediction
 import sys
 import torch
 import numpy as np
-from DatasetManager import DatasetManager
+from DatasetManager import DatasetManager, Filter
 sys.path.append('./preprocessing/')
 from utils import load_data_with_pickle, save_data_with_pickle
 from CorpusManager import CorpusManager
@@ -36,9 +36,6 @@ if __name__ == "__main__":
         device = torch.device("cuda")
         torch.set_default_tensor_type(torch.DoubleTensor)
 
-    torch.manual_seed(236451)
-    np.random.seed(236451)
-
     datasetManager = DatasetManager(FILE_ID)
     datasetManager.set_device(device)
     # load dataset
@@ -50,58 +47,76 @@ if __name__ == "__main__":
     
     datasetManager.find_and_filter_not_present()
 
-    datasetManager.shuffle_dataset_and_sample(fraction = 0.1, in_place = True)
+    normalize = True
 
-    datasetManager.split_data_by_unique_entities(exclude_min_threshold=100)
-    print('Train: {} vectors, Val: {} vectors, Test: {} vectors'.format(len(datasetManager.Y_train),
-                                                                        len(datasetManager.Y_val),
-                                                                        len(datasetManager.Y_test)
-                                                                        )
-             )
+    if normalize:
+        datasetManager.normalize()
 
-    # datasetManager.plot_datasets()
+    filter_dataset = True
 
-    PICKLE_PATH = '../source_files/datasets/'
-    ID = '16_3_100_0.1'
-    print('... saving dataset ...')
-    datasetManager.save_datasets(save_path = PICKLE_PATH, ID = ID)
-    # datasetManager.print_statistic_on_dataset()
-    print('... creating numeric dataset ...')
-    datasetManager.create_numeric_dataset()
-    print('... creating aligned dataset ...')
-    datasetManager.create_aligned_dataset()
-    print('... creating dataloaders ...')
-    datasetManager.create_dataloaders()
-
-
-    out_spec = [{'manifold':'euclid', 'dim':[64, len(datasetManager.aligned_y_train['distributional'][0])]},
-                {'manifold':'poincare', 'dim':[128, len(datasetManager.aligned_y_train['hyperbolic'][0])]}]
-
-    model = MTNCI(input_d=len(datasetManager.X_train[0]),
-                out_spec = out_spec,
-                dims = [256])
-
-    model.set_dataset_manager(datasetManager)
+    if filter_dataset:
+        filter = Filter()
+        datasetManager.setup_filter(filter_name = filter.FILTERS['ClassCohesion'], 
+                                    selfXY = True, 
+                                    log_file_path = '../source_files/logs/filter_log', 
+                                    filtered_dataset_path = '../source_files/vectors/{}filtered/'.format(FILE_ID))
+        datasetManager.filter()
     
-    model.initialize_tensorboard_manager('simple MTL loss')
+    # fraction = 0.5
 
-    model.set_device(device)
-    lr = 1e-3
+    # datasetManager.shuffle_dataset_and_sample(fraction = fraction, in_place = True)
+
+    # datasetManager.split_data_by_unique_entities(exclude_min_threshold=100)
+    # print('Train: {} vectors, Val: {} vectors, Test: {} vectors'.format(len(datasetManager.Y_train),
+    #                                                                     len(datasetManager.Y_val),
+    #                                                                     len(datasetManager.Y_test)
+    #                                                                     )
+    #          )
+
+    # # datasetManager.plot_datasets()
+
+    # PICKLE_PATH = '../source_files/datasets/'
+    # ID = '18_3_100_{}'.format(fraction)
+    # print('... saving dataset ...')
+    # datasetManager.save_datasets(save_path = PICKLE_PATH, ID = ID)
+    # # datasetManager.print_statistic_on_dataset()
+    # print('... creating numeric dataset ...')
+    # datasetManager.create_numeric_dataset()
+    # print('... creating aligned dataset ...')
+    # datasetManager.create_aligned_dataset()
+    # print('... creating dataloaders ...')
+    # datasetManager.create_dataloaders()
+
+
+    # out_spec = [{'manifold':'euclid', 'dim':[64, len(datasetManager.aligned_y_train['distributional'][0])]},
+    #             {'manifold':'poincare', 'dim':[128, 128, len(datasetManager.aligned_y_train['hyperbolic'][0])]}]
+
+    # model = MTNCI(input_d=len(datasetManager.X_train[0]),
+    #             out_spec = out_spec,
+    #             dims = [512, 512])
+
+    # model.set_dataset_manager(datasetManager)
     
-    model.set_optimizer(optimizer = RiemannianAdam(model.parameters(), lr = lr))
+    # model.initialize_tensorboard_manager(ID)
 
-    llambda = 0.05
+    # model.set_device(device)
+    # lr = 1e-3
+    
+    # model.set_optimizer(optimizer = RiemannianAdam(model.parameters(), lr = lr))
 
-    model.set_lambda(llambdas = {'hyperbolic' : 1 - llambda,
-                                 'distributional': llambda})
+    # llambda = 0.1
+    # weighted = True
+    # epochs = 100
 
-    epochs = 20
+    # model.set_lambda(llambdas = {'hyperbolic' : 1 - llambda,
+    #                              'distributional': llambda})
+    
 
-    model.set_hyperparameters(epochs = epochs)
-    print('... training model ... ')
-    model.train_model()
 
-    # weighted = False
+    # model.set_hyperparameters(epochs = epochs, weighted=weighted)
+    # print('... training model ... ')
+    # model.train_model()
+
 
     # min_loss = [100, 2000]
     # min_val_loss = [100, 2000]
@@ -113,8 +128,3 @@ if __name__ == "__main__":
     # epochs_no_improve = 0
     # n_epochs_stop = 20
     # min_val_losses = 100
-
-    # def get_weight(l1, l2):
-    #     return 2
-
-    #       

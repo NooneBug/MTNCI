@@ -5,7 +5,6 @@ from torch.utils.tensorboard import SummaryWriter
 class TensorBoardManager():
 
     def __init__(self, name):
-        shutil.rmtree('runs', ignore_errors=True)
         self.writer = SummaryWriter('runs/{}'.format(name))
 
 

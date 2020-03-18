@@ -7,8 +7,8 @@ from CorpusManager import CorpusManager
 # PATH in which utility files are stored
 PICKLES_PATH = '../../source_files/pickles/'
 
-FILE_ID = 'TEST'
-LENGTH = 1000
+FILE_ID = '18_3_max2words_100000'
+LENGTH = 100000
 
 OCCURRENCE_OF_ENTITIES_PATH = PICKLES_PATH + FILE_ID + 'word_occurrence_indexes'
 ENTITY_DICT_PATH = PICKLES_PATH + FILE_ID + 'found_entity_dict'

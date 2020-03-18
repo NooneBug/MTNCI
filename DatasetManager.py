@@ -10,6 +10,13 @@ import torch
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from abc import ABC, abstractmethod
+from sklearn.preprocessing import normalize
+from sklearn.metrics import silhouette_score
+from sklearn.metrics.pairwise import cosine_similarity
+from random import sample
+import copy
+
 
 from preprocessing.utils import load_data_with_pickle, save_data_with_pickle
 from preprocessing.CorpusManager import CorpusManager
@@ -312,3 +319,332 @@ class DatasetManager():
                               self.aligned_y_val,
                               device = self.device)
         self.valloader = DataLoader(valset, batch_size=batch_sizes['val'], shuffle=True)   
+
+    def compute_weights(self):
+        self.weights = {}
+
+        for vectors, label in zip([self.Y_numeric_train, self.Y_numeric_val, self.Y_numeric_test],
+                                 ['Train', 'Val', 'Test']):
+            x_unique = torch.tensor(vectors, device=self.device).unique(sorted=True)
+            x_unique_count = torch.stack([(torch.tensor(vectors, device=self.device)==x_u).sum() for x_u in x_unique]).float()
+            m = torch.max(x_unique_count)
+            labels_weights = m/x_unique_count
+            self.weights[label] = labels_weights / torch.norm(labels_weights)
+    
+    def get_weights(self, label):
+        return self.weights[label]
+
+
+    def normalize(self):
+        self.X = normalize(self.X, axis = 1)
+
+
+    def setup_filter(self, filter_name, log_file_path, filtered_dataset_path, X = None, Y = None, selfXY = True):
+        self.selected_filter = Filter().select_filter(filter_name, log_file_path, filtered_dataset_path)
+        
+        self.selected_filter.set_parameters()
+
+        if selfXY:
+            self.selected_filter.set_data(X = self.X, Y = self.Y)
+        elif X and Y:
+            self.selected_filter.set_data(X = X, Y = Y)
+        else:
+            raise Exception('Error: pass an X and an Y or set selfXY to true!!!') from e
+    
+    def filter(self):
+        self.selected_filter.filter()
+
+
+class Filter():
+
+    def __init__(self, log_file_path = None, filtered_dataset_path = None):
+        self.FILTERS = {'ClassCohesion': 'CC'}
+        self.log_file = log_file_path
+        self.filtered_dataset_path = filtered_dataset_path
+    
+    def set_data(self, X, Y):
+        self.X = X
+        self.Y = Y
+
+    
+    def log(self, text):
+        with open(self.log_file, 'a') as out:
+            out.write(text + '\n')
+
+    def select_filter(self, filter_name, log_file_path, filtered_dataset_path):
+        if filter_name == self.FILTERS['ClassCohesion']:
+            return FilterOnClassCohesion(log_file_path = log_file_path, 
+                                         filtered_dataset_path = filtered_dataset_path)
+
+    @abstractmethod
+    def filter():
+        pass
+
+    @abstractmethod
+    def save_data():
+        pass
+
+
+class FilterOnClassCohesion(Filter):
+
+    def save_data(self):
+        X = [vector for concept, vectors in self.dataset.items() for vector in vectors]
+        Y = [concept for concept, vectors in self.dataset.items() for vector in vectors]
+
+        save_data_with_pickle(self.filtered_dataset_path + 'X', X)
+        save_data_with_pickle(self.filtered_dataset_path + 'Y', Y)
+
+    def filter(self):
+
+        print('--- FILTERING PROCESS ---')
+        print('... creating dataset ...')
+        self.create_dataset()
+
+        print('... creating clusters ...')
+        self.clusters()
+
+        print('... computing sampled silhouette ...')
+        silh = self.sampled_silhouette()
+
+        self.log('silhouette score: {}'.format(silh))
+
+        print('... filtering out quantiles until {} cohesion is reached ... '.format(self.threshold))
+        filtered_dataset = self.filter_quantile(threshold = self.threshold, quantile=self.quantile)
+        filtered_dataset = {k: vs for k, vs in filtered_dataset.items() if len(vs) > 2}
+
+        print('vectors in filtered dataset:{}'.format(len([v for k, vs in filtered_dataset.items() for v in vs])))
+        self.log('vectors in filtered dataset:{}'.format(len([v for k, vs in filtered_dataset.items() for v in vs])))
+        
+        self.dataset = filtered_dataset
+
+        print('... re-creating clusters ...')
+        self.clusters()
+
+        print('... re-computing sampled silhouette ...')
+        silh = self.sampled_silhouette()
+        self.log('silhouette score on filtered dataset: {}'.format(silh))
+
+
+        self.save_data()
+
+
+
+    def clusters(self):
+        self.cluster_sizes, cohesions = self.create_clusters()
+
+        self.cohesions = {k: np.mean(v) for k, v in cohesions.items()}
+
+        self.log(self.get_stats(cohesions = self.cohesions))
+
+    def sampled_silhouette(self):
+        X = [vector for concept, vectors in self.dataset.items() for vector in vectors]
+        Y = [concept for concept, vectors in self.dataset.items() for vector in vectors]
+
+        print('number of vectors in the dataset: {}'.format(len(Y)))
+        self.log('number of vectors in the dataset: {}'.format(len(Y)))
+        
+        dataset = {y:[] for y in set(Y)}
+        for x, y in zip(X, Y):
+            dataset[y].append(x)
+        
+        sampled_dataset = {y: sample(dataset[y], self.cluster_sizes[y]) for y in set(Y)}
+        sampled_Y = [label for label, vectors in sampled_dataset.items() for x in sampled_dataset[label]]
+        sampled_X = [x for label, vectors in sampled_dataset.items() for x in sampled_dataset[label]]
+        
+        print('number of vectors in the sampled dataset: {}'.format(len(sampled_Y)))
+        self.log('number of vectors in the sampled dataset: {}'.format(len(sampled_Y)))
+        
+        return silhouette_score(sampled_X, sampled_Y, metric='cosine')
+
+    def set_parameters(self, threshold = 0.6, quantile = 0.05):
+        self.threshold = threshold
+        self.quantile = quantile
+
+    def create_dataset(self):
+        self.dataset = defaultdict(list)
+
+        for x, y in zip(self.X, self.Y):
+            self.dataset[y].append(x)
+        
+        self.dataset = {k:[v for v in values] for k, values in self.dataset.items() if len(values) > 1}
+
+
+    def create_clusters(self, epsilon = 0.005, iterations = 5, patience_threshold = 10, max_size = 3000):
+        print('vectors in dataset:{}'.format(len([v for k, vs in self.dataset.items() for v in vs])))
+        
+        distances = defaultdict(list)
+        xs = defaultdict(list)
+        cluster_sizes = {}
+        cohesions = {}
+
+        tot = len(self.dataset)
+        
+        T = time.time()
+
+        for i, (k, v) in enumerate(self.dataset.items()):
+
+            sample_size = 200
+
+            last_dist = 0    
+            difference = 1
+
+            t = time.time()
+
+            patience = 0
+            last_meann = 0
+
+            while patience < patience_threshold and sample_size < max_size:
+
+                cohesions[k] = []
+
+                for j in range(iterations):
+
+                    if sample_size < len(v):
+                        sam = sample(v, sample_size)
+                    else:
+                        sam = v
+
+                    xs[k].append(len(sam))
+                    
+                    cohesion = np.sum(np.tril(cosine_similarity(sam), -1))/sum([I + 1 for I in range(len(sam) - 1)])
+                    cohesions[k].append(cohesion)
+                    
+
+                meann = np.mean(cohesions[k])
+
+                difference_on_mean = abs(meann - last_meann)
+
+                last_meann = meann
+
+                standev = np.std(cohesions[k])
+
+                if standev < epsilon and difference_on_mean < epsilon:
+                    patience += 1
+                else:
+                    patience = 0
+
+                sample_size += 20
+
+            cluster_sizes[k] = len(sam)
+
+            output = '{:3}/{}: {:10}, {:15} seconds, {}'.format(i + 1, tot, sample_size, round(time.time() - t, 3), k)
+            print(output)
+            self.log(text = output)
+            t = time.time()
+            
+        print('total_time: {}'.format(round(time.time() - T, 3)))
+        self.log(text = 'total_time: {}'.format(round(time.time() - T, 3)))
+        
+        return cluster_sizes, cohesions
+
+    def filter_quantile(self, threshold, quantile = 0.05):
+    
+        dataset_ = copy.deepcopy(self.dataset)
+        cohesions_ = copy.deepcopy(self.cohesions)
+        
+        filtered_dataset = {}
+        filtered_quantities = {k:0 for k in dataset_}
+        tot = len(dataset_)
+        initial_length = {k: len(v) for k, v in dataset_.items()}
+        
+        t = time.time()
+        first = True
+        filtered_cohesions = [0]
+        
+        while min(filtered_cohesions) < threshold:
+            
+            filtered_cohesions = []
+            filtered_dataset = {k:[] for k,v in dataset_.items()}
+            while_time = time.time()
+            
+            for i, (k, vs) in enumerate(dataset_.items()):
+                if cohesions_[k] < threshold:
+                    if self.cluster_sizes[k] < len(vs):
+                        class_cluster = sample(vs, self.cluster_sizes[k])
+                    else:
+                        class_cluster = vs
+                    
+                    if len(vs) >= 2 and len(class_cluster) >= 2:
+                        computed_cohesions = np.mean(cosine_similarity(vs, class_cluster), axis=1)
+                        q = np.quantile(computed_cohesions, quantile, interpolation='nearest')
+
+                        computed_cohesion_mask = np.where(computed_cohesions <= q, 0, 1)
+
+                        for j, v in enumerate(vs):
+                            if computed_cohesion_mask[j]:
+                                filtered_dataset[k].append(v)
+                            else:
+                                filtered_quantities[k] += 1
+                        
+                        if len(filtered_dataset[k]) > 2:
+                            if self.cluster_sizes[k] < len(filtered_dataset[k]):
+                                class_cluster = sample(filtered_dataset[k], self.cluster_sizes[k])
+                            else:
+                                class_cluster = filtered_dataset[k]
+                    
+                            if len(filtered_dataset[k]) != len(class_cluster):
+                                new_cohesion = np.sum(cosine_similarity(filtered_dataset[k], class_cluster))/(len(filtered_dataset[k] * len(class_cluster)))
+                            else:
+                                new_cohesion = np.sum(np.tril(cosine_similarity(filtered_dataset[k]), -1))/sum([I + 1 for I in range(len(filtered_dataset[k]) - 1)])
+                                                                            
+                            filtered_cohesions.append(new_cohesion)
+                            
+                            cohesions_[k] = new_cohesion
+                            
+                            output = '{:3}/{}: {:.2f}, {:.3f} seconds, cohesion:{:.4f}, {}'.format(i + 1, 
+                                                                                                tot, 
+                                                                                                filtered_quantities[k]/initial_length[k],
+                                                                                                time.time() - t,
+                                                                                                new_cohesion,
+                                                                                                k)
+                            
+
+                            
+                        else:
+                            filtered_dataset[k] = []
+                            output = '{:3}/{}: {} has not passed the filter process (no more vectors)'.format(i + 1, 
+                                                                                                              tot,
+                                                                                                              k)
+
+                    else:
+                        filtered_dataset[k] = []
+                        output = '{:3}/{}: {} has not passed the filter process (no more vectors)'.format(i + 1, 
+                                                                                                          tot,
+                                                                                                          k)
+                        
+                else:
+                    filtered_dataset[k] = vs
+                    output = '<- {:3}/{}: {:.2f}, {:.3f} seconds, cohesion:{:.4f}, {} ->'.format(i + 1, 
+                                                                                                tot, 
+                                                                                                filtered_quantities[k]/initial_length[k],
+                                                                                                time.time() - t,
+                                                                                                cohesions_[k],
+                                                                                                k)
+                print(output)
+                self.log(output)
+
+                t = time.time()
+                
+            dataset_ = copy.deepcopy(filtered_dataset)
+            
+            output = '{:30}'.format(round(time.time() - while_time, 4))
+            print(output)
+            self.log(output)
+            while_time = time.time()
+            
+        return dataset_
+
+    def get_stats(self, cohesions):
+        v = list(cohesions.values())
+
+        print('SINGLE WORDS CLUSTERS\n')
+        print('minimum mean cluster similarities: {}'.format(round(min(v), 4)))
+        print('maximum mean cluster similarities: {}'.format(round(max(v), 4)))
+        print('mean of mean cluster similarities: {}'.format(round(np.mean(v), 4)))
+        print('std  of mean cluster similarities: {}'.format(round(np.std(v), 4)))
+
+        return 'SINGLE WORDS CLUSTERS\n' + \
+            'minimum mean cluster similarities: {}\n'.format(round(min(v), 4)) + \
+            'maximum mean cluster similarities: {}\n'.format(round(max(v), 4)) + \
+            'mean of mean cluster similarities: {}\n'.format(round(np.mean(v), 4)) + \
+            'std  of mean cluster similarities: {}'.format(round(np.std(v), 4))

@@ -18,7 +18,7 @@ PATH_TO_EDGELIST = PICKLES_PATH + 'dbpedia_edgelist_no_closure.tsv'
 CORPUS_PATH = '/datahdd/vmanuel/ELMo/Corpora/shuffled_text_with_words'
 LOG = 'MEGAlog_4_3.txt'
 
-FILE_ID = 'TEST'
+FILE_ID = '18_3_max2words_100000'
 
 GRAPH_PATH = PICKLES_PATH + FILE_ID + 'graph'
 ENTITY_DICT_PATH = PICKLES_PATH + FILE_ID +'entity_dict'
@@ -27,7 +27,7 @@ WORD_OCCURRENCE_INDEX_PATH = PICKLES_PATH + FILE_ID + 'word_occurrence_indexes'
 FOUND_ENTITY_DICT_PATH = PICKLES_PATH + FILE_ID + 'found_entity_dict'
 FINAL_TREE_PATH = PICKLES_PATH + FILE_ID + 'final_tree'
 
-LENGTH = 1000
+LENGTH = 100000
 
 avoid_multilabeling = True
 experimental = False
@@ -132,7 +132,7 @@ if __name__ == "__main__":
     # retrieve entities names
     e = EntityNameRetriever()
     
-    FRAC = 0.01 
+    FRAC = 1 
     # random.seed(236451)
     try:
         print('load entity dict from :{}'.format(ENTITY_DICT_PATH))
@@ -145,7 +145,7 @@ if __name__ == "__main__":
         print('build entity_dict')
         t = time.time()
         entity_dict = e.entities_from_types(random.sample(list_of_classes, int(FRAC*len(list_of_classes))))
-        entity_dict = e.entity_name_preprocessing(entity_dict, max_words=20)
+        entity_dict = e.entity_name_preprocessing(entity_dict, max_words=2)
         t = time.time() - t 
         save_data_with_pickle(ENTITY_DICT_PATH, entity_dict)
         print('build in {:.2f} seconds, saved in {}'.format(t, ENTITY_DICT_PATH))

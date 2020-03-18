@@ -121,7 +121,8 @@ class MTNCI(nn.Module):
     def set_hyperparameters(self, epochs, weighted = False):
         self.epochs = epochs
         self.weighted = weighted
-
+        if self.weighted:
+            self.datasetManager.compute_weights()
 
     def train_model(self):
 
@@ -129,11 +130,29 @@ class MTNCI(nn.Module):
         val_length = len(self.datasetManager.X_val)
 
         
-        distributional_prediction_manager = Prediction(device = self.device)
-        distributional_prediction_manager.select_loss(distributional_prediction_manager.LOSSES['cosine_dissimilarity'])
+        distributional_prediction_train_manager = Prediction(device = self.device)
+        distributional_prediction_train_manager.select_loss(distributional_prediction_train_manager.LOSSES['cosine_dissimilarity'])
 
-        hyperbolic_prediction_manager = Prediction(device = self.device)
-        hyperbolic_prediction_manager.select_loss(distributional_prediction_manager.LOSSES['hyperbolic_distance'])
+        hyperbolic_prediction_train_manager = Prediction(device = self.device)
+        hyperbolic_prediction_train_manager.select_loss(distributional_prediction_train_manager.LOSSES['hyperbolic_distance'])
+
+        distributional_prediction_val_manager = Prediction(device = self.device)
+        distributional_prediction_val_manager.select_loss(distributional_prediction_val_manager.LOSSES['cosine_dissimilarity'])
+
+        hyperbolic_prediction_val_manager = Prediction(device = self.device)
+        hyperbolic_prediction_val_manager.select_loss(distributional_prediction_val_manager.LOSSES['hyperbolic_distance'])
+
+        if self.weighted:
+
+            train_weights = self.datasetManager.get_weights(label = 'Train')
+            val_weights = self.datasetManager.get_weights(label = 'Val')
+
+            distributional_prediction_train_manager.set_weight(train_weights)
+            hyperbolic_prediction_train_manager.set_weight(train_weights)
+            
+            distributional_prediction_val_manager.set_weight(val_weights)
+            hyperbolic_prediction_val_manager.set_weight(val_weights)
+
 
         for epoch in range(self.epochs):
             train_it = iter(self.datasetManager.trainloader)
@@ -162,16 +181,18 @@ class MTNCI(nn.Module):
                 
                 output = self(x)
 
-                distributional_prediction_manager.set_prediction(predictions = output[0],
-                                                                 true_values = targets['distributional'])
+                distributional_prediction_train_manager.set_prediction(predictions = output[0],
+                                                                 true_values = targets['distributional'], 
+                                                                 labels = labels)
 
-                hyperbolic_prediction_manager.set_prediction(predictions = output[1], 
-                                                             true_values = targets['hyperbolic'])                
+                hyperbolic_prediction_train_manager.set_prediction(predictions = output[1], 
+                                                             true_values = targets['hyperbolic'],
+                                                             labels = labels)                
 
 
-                distributional_train_loss = distributional_prediction_manager.compute_loss()
+                distributional_train_loss = distributional_prediction_train_manager.compute_loss()
                 
-                hyperbolic_train_loss = hyperbolic_prediction_manager.compute_loss()
+                hyperbolic_train_loss = hyperbolic_prediction_train_manager.compute_loss()
 
                 distributional_train_loss_SUM += torch.sum(distributional_train_loss * self.llambdas['distributional']).item()
                 hyperbolic_train_loss_SUM += torch.sum(hyperbolic_train_loss * (self.llambdas['hyperbolic'])).item()
@@ -198,18 +219,20 @@ class MTNCI(nn.Module):
 
                         output = self(x)
 
-                        distributional_prediction_manager.set_prediction(predictions = output[0],
-                                                                        true_values = targets['distributional'])
+                        distributional_prediction_val_manager.set_prediction(predictions = output[0],
+                                                                        true_values = targets['distributional'],
+                                                                        labels = labels)
 
-                        hyperbolic_prediction_manager.set_prediction(predictions = output[1], 
-                                                                    true_values = targets['hyperbolic']) 
+                        hyperbolic_prediction_val_manager.set_prediction(predictions = output[1], 
+                                                                    true_values = targets['hyperbolic'],
+                                                                    labels = labels) 
                         
-                        distributional_val_loss = distributional_prediction_manager.compute_loss()
+                        distributional_val_loss = distributional_prediction_val_manager.compute_loss()
                         
-                        hyperbolic_val_loss = hyperbolic_prediction_manager.compute_loss()
+                        hyperbolic_val_loss = hyperbolic_prediction_val_manager.compute_loss()
                         
                         distributional_val_loss_SUM += torch.sum(distributional_val_loss * self.llambdas['distributional']).item()
-                        hyperbolic_val_loss_SUM += torch.sum(hyperbolic_val_loss * (1 - self.llambdas['hyperbolic'])).item()
+                        hyperbolic_val_loss_SUM += torch.sum(hyperbolic_val_loss * (self.llambdas['hyperbolic'])).item()
                         
                         val_loss = self.get_multitask_loss({'distributional': distributional_val_loss, 
                                                             'hyperbolic': hyperbolic_val_loss})
@@ -252,19 +275,26 @@ class MTNCI(nn.Module):
                                                 list_of_names = ['Train', 'Val'], 
                                                 epoch = epoch)
 
+    
+
 class Prediction:
 
-    def __init__(self, device):
+    def __init__(self, device, weighted = False):
         self.LOSSES = {'cosine_dissimilarity': 'COSD',
                        'hyperbolic_distance': 'HYPD',
                        'regularized_hyperbolic_distance': 'RHYPD',
                        'hyperboloid_distance' : 'LORENTZD'
         }
         self.device = device
+        self.weighted = weighted
 
-    def set_prediction(self, predictions, true_values):
+    def set_weight(self, weights):
+        self.weights = weights
+
+    def set_prediction(self, predictions, true_values, labels):
         self.predictions = predictions
         self.true_values = true_values
+        self.labels = labels
     
     def select_loss(self, loss_name):
         if loss_name == self.LOSSES['cosine_dissimilarity']:
@@ -277,9 +307,18 @@ class Prediction:
         #     self.selected_loss = lorentzDistanceLoss(device = self.device)
 
     def compute_loss(self):
-        return self.selected_loss.compute_loss(true = self.true_values,
-                                               pred = self.predictions)
+        loss = self.selected_loss.compute_loss(true = self.true_values,
+                                                   pred = self.predictions)
+        if not self.weighted:
+            return loss
+        else:
+            batch_weights = self.get_batch_weights()
+            return loss * batch_weights
     
+    def get_batch_weights(self):
+        batch_weights = [self.weights[l.item()] for l in self.labels]
+        return torch.tensor(batch_weights, dtype=torch.float64, device = self.device)
+
 
 class Loss(ABC):
 
