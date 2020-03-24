@@ -152,7 +152,7 @@ class DatasetManager():
         self.print_loaded()
         
     def split_data_by_unique_entities(self, test_sizes = {'test' : 0.1, 'val': 0.1},
-                                            exclude_min_threshold = 3):
+                                            exclude_min_threshold = 10):
         '''
         starting from X, Y and entities creates train, test and validation
             the splitting is based on entity names, because we want to setup a concept invention task,
@@ -166,6 +166,8 @@ class DatasetManager():
         
         datasets are stored in X/Y/E_train, X/Y/E_test, X/Y/E_val
         '''
+
+        np.random.seed(236451)
 
         unique_entities = list(set(self.entities))
         direct_labeling = {e: y for e, y in zip(self.entities, self.Y)}
@@ -494,7 +496,9 @@ class DatasetManager():
         self.X = normalize(self.X, axis = 1)
 
 
-    def setup_filter(self, filter_name, log_file_path, filtered_dataset_path, X = None, Y = None, entities = None, selfXY = True):
+    def setup_filter(self, filter_name, log_file_path, filtered_dataset_path, 
+                            X = None, Y = None, entities = None, selfXY = True,
+                            threshold = 0.6, quantile = 0.05):
         '''
         setup the filter which will be used to filter input vectors (you don't say)
 
@@ -505,9 +509,11 @@ class DatasetManager():
             X, Y and entities: the dataset to be filtered (requires selfXY = False) 
             selfXY: if = True: setup self.X/Y/entities as dataset to be filtered
         '''
-        self.selected_filter = Filter().select_filter(filter_name, log_file_path, filtered_dataset_path)
+        self.selected_filter = Filter().select_filter(filter_name)
         
-        self.selected_filter.set_parameters()
+        self.selected_filter.set_parameters(log_file_path = log_file_path, 
+                                            filtered_dataset_path = filtered_dataset_path,
+                                            threshold=threshold, quantile = quantile)
 
         if selfXY:
             self.selected_filter.set_data(X = self.X, Y = self.Y, entities = self.entities)
@@ -535,8 +541,6 @@ class Filter():
         declare in FILTERS the name of all filter
         '''
         self.FILTERS = {'ClassCohesion': 'CC'}
-        self.log_file = log_file_path
-        self.filtered_dataset_path = filtered_dataset_path
     
     def set_data(self, X, Y, entities):
         '''
@@ -561,18 +565,15 @@ class Filter():
         with open(self.log_file, 'a') as out:
             out.write(text + '\n')
 
-    def select_filter(self, filter_name, log_file_path, filtered_dataset_path):
+    def select_filter(self, filter_name):
         '''
         select the filter based on filter_name
 
         params:
             filter_name: the name of the filter
-            log_file_path: the path to the log file
-            filtered_dataset_path: the path in which save the the filtered dataset
         '''
         if filter_name == self.FILTERS['ClassCohesion']:
-            return FilterOnClassCohesion(log_file_path = log_file_path, 
-                                         filtered_dataset_path = filtered_dataset_path)
+            return FilterOnClassCohesion()
 
     @abstractmethod
     def filter():
@@ -603,7 +604,7 @@ class FilterOnClassCohesion(Filter):
         params:
             out_words: a dict {concept: [list of words]} which will be logged 
         '''
-        with open('../source_files/logs/out_words_log.txt', 'a') as out:
+        with open('../source_files/logs/{}_out_words_log.txt'.format(self.threshold), 'w') as out:
             out.write('\n ------------------------------------------------------ \n')
             for concept, words in sorted(out_words.items()):
                 out.write('{}: {} words filtered, {} unique words\n'.format(concept, len(words), len(set(words))))
@@ -619,7 +620,7 @@ class FilterOnClassCohesion(Filter):
         params:
             in_words: a dict {concept: [list of words]} which will be logged 
         '''
-        with open('../source_files/logs/in_words_log.txt', 'a') as out:
+        with open('../source_files/logs/{}_in_words_log.txt'.format(self.threshold), 'w') as out:
             out.write('\n ------------------------------------------------------ \n')
             for concept, words in sorted(in_words.items()):
                 out.write('{}: {} words maintained, {} unique words\n'.format(concept, len(words), len(set(words))))
@@ -627,40 +628,42 @@ class FilterOnClassCohesion(Filter):
                 for couple in c:
                     out.write('\t\t {}: {}\n'.format(couple[0], couple[1]))
 
-    def filter_dataset_on_numerosity(self, filtering_treshold):
+    def filter_dataset_on_numerosity(self, low_threshold):
         '''
         filters the dataset based on the numerosity of concept vectors, 
-            if a concept has less than filtering_treshold vectors will be filtered out
+            if a concept has less than filtering_threshold vectors will be filtered out
         '''
-        self.entities_dataset = {k: vs for k, vs in self.entities_dataset.items() if len(self.dataset[k]) > filtering_treshold} 
-        self.dataset = {k: vs for k, vs in self.dataset.items() if len(vs) > filtering_treshold}
+        self.entities_dataset = {k: vs for k, vs in self.entities_dataset.items() if len(self.dataset[k]) > low_threshold} 
+        self.dataset = {k: vs for k, vs in self.dataset.items() if len(vs) > low_threshold}
         
     def filter(self):
         '''
         define the pipeline of the filter
         '''
 
-        filtering_treshold = 100
+        filtering_threshold = 100
         
         print('--- FILTERING PROCESS ---')
         print('... creating dataset ...')
 
         self.create_datasets()
-        self.filter_dataset_on_numerosity(filtering_treshold)
+        self.filter_dataset_on_numerosity(filtering_threshold)
         print('... creating clusters ...')
         self.clusters()
 
-        print('... computing sampled silhouette ...')
-        silh = self.sampled_silhouette()
+        # print('... computing sampled silhouette ...')
+        # silh = self.sampled_silhouette()
+        # print('silhouette score: {}'.format(silh))
+        # self.log('silhouette score: {}'.format(silh))
 
-        self.log('silhouette score: {}'.format(silh))
-
-        print('... filtering out quantiles until {} cohesion is reached ... '.format(self.threshold))
+        print('... filtering out quantiles until {} cohesion is reached ... (quantile = {})'.format(self.threshold, self.quantile))
+        t = time.time()
         filtered_dataset, filtered_entities_dataset, out_words = self.filter_quantile(threshold = self.threshold, 
                                                                                       quantile=self.quantile,
-                                                                                    filtering_treshold=filtering_treshold)
-        filtered_dataset = {k: vs for k, vs in filtered_dataset.items() if len(vs) > filtering_treshold}
-        filtered_entities_dataset = {k: entities for k, entities in filtered_entities_dataset.items() if len(entities) > filtering_treshold}
+                                                                                    filtering_threshold=filtering_threshold)
+        print('filtered in {:.2f} seconds'.format(time.time() - t))
+        filtered_dataset = {k: vs for k, vs in filtered_dataset.items() if len(vs) > filtering_threshold}
+        filtered_entities_dataset = {k: entities for k, entities in filtered_entities_dataset.items() if len(entities) > filtering_threshold}
 
         self.log_out_words(out_words)
         self.log_in_words(filtered_entities_dataset)
@@ -669,14 +672,18 @@ class FilterOnClassCohesion(Filter):
         self.log('vectors in filtered dataset:{}'.format(len([v for k, vs in filtered_dataset.items() for v in vs])))
         
         self.dataset = filtered_dataset
-        self.entities_dataset = filtered_dataset
+        self.entities_dataset = filtered_entities_dataset
+
+        max_number = 4000
+        self.reduce_max_number(max_number)
 
         print('... re-creating clusters ...')
         self.clusters()
 
-        print('... re-computing sampled silhouette ...')
-        silh = self.sampled_silhouette()
-        self.log('silhouette score on filtered dataset: {}'.format(silh))
+        # print('... re-computing sampled silhouette ...')
+        # silh = self.sampled_silhouette()
+        # print('silhouette score: {}'.format(silh))
+        # self.log('silhouette score on filtered dataset: {}'.format(silh))
 
         # self.save_data()
 
@@ -686,6 +693,27 @@ class FilterOnClassCohesion(Filter):
 
         return X, Y, entities
 
+    def reduce_max_number(self, max_number):
+        counter = {c:len(vectors) for c, vectors in self.dataset.items()}
+
+        support_dict = {}
+        new_dataset = {}
+        new_entities_dataset = {}
+        for c, count in counter.items():
+            if count > max_number:
+                
+                support_list = [(vec, ent) for vec, ent in zip(self.dataset[c], self.entities_dataset[c])]
+
+                sample = random.sample(support_list, max_number)
+                new_dataset[c] = [s[0] for s in sample]
+                new_entities_dataset[c] = [s[1] for s in sample]
+
+            else:
+                new_dataset[c] = self.dataset[c] 
+                new_entities_dataset[c] = self.entities_dataset[c]
+
+        self.dataset = new_dataset
+        self.entities_dataset = new_entities_dataset
 
     def clusters(self):
         '''
@@ -723,14 +751,18 @@ class FilterOnClassCohesion(Filter):
         
         return silhouette_score(sampled_X, sampled_Y, metric='cosine')
 
-    def set_parameters(self, threshold = 0.5, quantile = 0.05):
+    def set_parameters(self, log_file_path, filtered_dataset_path, threshold, quantile):
         '''
         set the filters parameters
 
         params:
-            treshold: the coherence to be reached by each concept cluster
-            quantile: the quantile which will be removed on each iteration until the treshold is not reached 
+            log_file_path: the path to the log file
+            filtered_dataset_path: the path in which save the the filtered dataset
+            threshold: the coherence to be reached by each concept cluster
+            quantile: the quantile which will be removed on each iteration until the threshold is not reached 
         '''
+        self.log_file = log_file_path
+        self.filtered_dataset_path = filtered_dataset_path
         self.threshold = threshold
         self.quantile = quantile
 
@@ -757,7 +789,7 @@ class FilterOnClassCohesion(Filter):
         params:
             epsilon: the value of changement of mean coherence and std between one iteration sample and the successive 
             iterations: the number of sample used to compute the mean coherence and the standard deviation
-            patience_treshold: the number of consecutive times in which both mean and standard deviant are lesser than the epsilon value
+            patience_threshold: the number of consecutive times in which both mean and standard deviant are lesser than the epsilon value
             max_size: the maximum size of a cluster
 
         returns:
@@ -832,7 +864,7 @@ class FilterOnClassCohesion(Filter):
         
         return cluster_sizes, cohesions
 
-    def filter_quantile(self, threshold, filtering_treshold = 2, quantile = 0.05):
+    def filter_quantile(self, threshold, filtering_threshold = 2, quantile = 0.05):
         
         '''
         for each concept, create a sample of the cluster size, compute the cohesion of each vector w.r.t the sample
@@ -840,7 +872,7 @@ class FilterOnClassCohesion(Filter):
 
         params:
             threshold: the cohesion value to be reached from each cluster
-            filtering_treshold: the minimum number of value in each cluster
+            filtering_threshold: the minimum number of value in each cluster
             quantile: the quantile to remove at each iteration
 
         returns:
@@ -863,16 +895,19 @@ class FilterOnClassCohesion(Filter):
         
         initial_length = {k: len(v) for k, v in dataset_.items()}
         
-        t = time.time()
         first = True
         filtered_cohesions = [0]
         
-        while min(filtered_cohesions) < threshold:
+        all_time = time.time()
+        iterations = 0
+        while_time = time.time()
+        while filtered_cohesions and min(filtered_cohesions) < threshold:
             
+            filter_counter = 0
             filtered_cohesions = []
             filtered_dataset = {k:[] for k, _ in dataset_.items()}
             filtered_entities_dataset = {k: [] for k, _ in dataset_.items()}
-            while_time = time.time()
+            t = time.time()
             
             for i, ((k, vs), (_, entities)) in enumerate(zip(dataset_.items(), entities_dataset_.items())):
                 if len(vs) != len(entities):
@@ -883,7 +918,7 @@ class FilterOnClassCohesion(Filter):
                     else:
                         class_cluster = vs
                     
-                    if len(class_cluster) >= filtering_treshold:
+                    if len(class_cluster) >= filtering_threshold:
 
                         computed_cohesions = np.mean(cosine_similarity(vs, class_cluster), axis=1)
                         q = np.quantile(computed_cohesions, quantile, interpolation='nearest')
@@ -898,7 +933,7 @@ class FilterOnClassCohesion(Filter):
                                 filtered_quantities[k] += 1
                                 out_words[k].append(e)
 
-                        if len(filtered_dataset[k]) > filtering_treshold:
+                        if len(filtered_dataset[k]) > filtering_threshold:
                             if self.cluster_sizes[k] < len(filtered_dataset[k]):
                                 class_cluster = sample(filtered_dataset[k], self.cluster_sizes[k])
                             else:
@@ -913,9 +948,10 @@ class FilterOnClassCohesion(Filter):
                             
                             cohesions_[k] = new_cohesion
                             verbose = True
+                            filter_counter += 1
                             output = '    {:3}/{}: {:>6}/{:<6}, {:.3f} seconds, cohesion:{:.4f}, {}   '.format(i + 1, 
                                                                                                 tot, 
-                                                                                                filtered_quantities[k],
+                                                                                                initial_length[k] - filtered_quantities[k],
                                                                                                 initial_length[k],
                                                                                                 time.time() - t,
                                                                                                 new_cohesion,
@@ -942,7 +978,7 @@ class FilterOnClassCohesion(Filter):
                 else:
                     filtered_dataset[k] = vs
                     filtered_entities_dataset[k] = entities_dataset_[k]
-                    verbose = True
+                    verbose = False
                     output = ' << {:3}/{}: {:>6}/{:<6}, {:.3f} seconds, cohesion:{:.4f}, {} >>'.format(i + 1, 
                                                                                                 tot, 
                                                                                                 len(entities_dataset_[k]),
@@ -958,8 +994,11 @@ class FilterOnClassCohesion(Filter):
                 
             dataset_ = copy.deepcopy(filtered_dataset)
             entities_dataset_ = copy.deepcopy(filtered_entities_dataset)
-
-            output = '{:30}'.format(round(time.time() - while_time, 4))
+            iterations += 1
+            output = '  {}^ iteration : {:.2f} seconds (total: {:.2f} seconds), {} quantiles filtered out in this iteration'.format(iterations,
+                                                                                                                    time.time() - while_time,
+                                                                                                                    time.time() - all_time,
+                                                                                                                    filter_counter)
             print(output)
             self.log(output)
             while_time = time.time()

@@ -9,7 +9,7 @@ FILE_ID = '18_3_max2words_100000'
 
 FINAL_TREE_PATH = PICKLES_PATH + FILE_ID + 'final_tree'
 
-TYPE_CORPUS = '../../source_files/type2vec_utilities/annotated_text_with_types.txt'
+TYPE_CORPUS = '/datahdd/vmanuel/MTNCI_datasets/source_files/type2vec_utilities/annotated_text_with_types.txt'
 
 if __name__ == "__main__":
     

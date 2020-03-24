@@ -1,10 +1,13 @@
 import shutil
 from torch.utils.tensorboard import SummaryWriter
-
+import os
 
 class TensorBoardManager():
 
     def __init__(self, name):
+
+        if os.path.exists('runs/{}'.format(name)):
+            shutil.rmtree('runs/{}'.format(name))
         self.writer = SummaryWriter('runs/{}'.format(name))
 
 

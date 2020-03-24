@@ -13,7 +13,7 @@ import random
 PICKLES_PATH = '../../source_files/pickles/'
 
 # PATH that refers to the file which let the building of the Ontology Graph
-PATH_TO_EDGELIST = PICKLES_PATH + 'dbpedia_edgelist_no_closure.tsv'
+PATH_TO_EDGELIST = '/datahdd/vmanuel/MTNCI_datasets/source_files/pickles/dbpedia_edgelist_no_closure.tsv'
 # PATH to the corpus from which information are extracted
 CORPUS_PATH = '/datahdd/vmanuel/ELMo/Corpora/shuffled_text_with_words'
 LOG = 'MEGAlog_4_3.txt'

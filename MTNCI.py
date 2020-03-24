@@ -6,6 +6,10 @@ from torch.utils.data import Dataset, DataLoader
 from geoopt.optim import RiemannianAdam
 from tensorBoardManager import TensorBoardManager
 from abc import ABC, abstractmethod
+from preprocessing.utils import hyper_distance, hyperbolic_midpoint, cosine_dissimilarity, vector_mean
+import numpy as np
+
+
 
 class CommonLayer(nn.Module):
     def __init__(self, 
@@ -124,24 +128,25 @@ class MTNCI(nn.Module):
         if self.weighted:
             self.datasetManager.compute_weights()
 
+    def get_prediction_manager(self, loss_name):
+        manager = Prediction(device = self.device)
+        manager.select_loss(loss_name=loss_name)
+
+        return manager
+
     def train_model(self):
 
         train_length = len(self.datasetManager.X_train)
         val_length = len(self.datasetManager.X_val)
 
+        losses = Prediction(device = self.device).LOSSES
+
+        distributional_prediction_train_manager = self.get_prediction_manager(loss_name=losses['cosine_dissimilarity'])
+        distributional_prediction_val_manager = self.get_prediction_manager(loss_name=losses['cosine_dissimilarity'])
+
+        hyperbolic_prediction_train_manager = self.get_prediction_manager(loss_name=losses['hyperbolic_distance'])
+        hyperbolic_prediction_val_manager = self.get_prediction_manager(loss_name=losses['hyperbolic_distance'])
         
-        distributional_prediction_train_manager = Prediction(device = self.device)
-        distributional_prediction_train_manager.select_loss(distributional_prediction_train_manager.LOSSES['cosine_dissimilarity'])
-
-        hyperbolic_prediction_train_manager = Prediction(device = self.device)
-        hyperbolic_prediction_train_manager.select_loss(distributional_prediction_train_manager.LOSSES['hyperbolic_distance'])
-
-        distributional_prediction_val_manager = Prediction(device = self.device)
-        distributional_prediction_val_manager.select_loss(distributional_prediction_val_manager.LOSSES['cosine_dissimilarity'])
-
-        hyperbolic_prediction_val_manager = Prediction(device = self.device)
-        hyperbolic_prediction_val_manager.select_loss(distributional_prediction_val_manager.LOSSES['hyperbolic_distance'])
-
         if self.weighted:
 
             train_weights = self.datasetManager.get_weights(label = 'Train')
@@ -153,6 +158,8 @@ class MTNCI(nn.Module):
             distributional_prediction_val_manager.set_weight(val_weights)
             hyperbolic_prediction_val_manager.set_weight(val_weights)
 
+            train_weights_sum = 0
+            val_weights_sum = 0
 
         for epoch in range(self.epochs):
             train_it = iter(self.datasetManager.trainloader)
@@ -201,6 +208,10 @@ class MTNCI(nn.Module):
                                                       'hyperbolic': hyperbolic_train_loss})
                 
                 train_loss_SUM += train_loss.item()
+                if self.weighted:
+                    batch_weights = distributional_prediction_train_manager.get_batch_weights()
+                    train_weights_sum += torch.sum(batch_weights)
+
                 train_loss.backward()
                 self.optimizer.step()
            
@@ -238,16 +249,31 @@ class MTNCI(nn.Module):
                                                             'hyperbolic': hyperbolic_val_loss})
                         
                         val_loss_SUM += val_loss.item()
+
+                        if self.weighted:
+                            batch_weights = distributional_prediction_val_manager.get_batch_weights()
+                            val_weights_sum += torch.sum(batch_weights)
             
-            train_loss_value = train_loss_SUM/train_length
-            val_loss_value = val_loss_SUM/val_length
+            if not self.weighted:
+                train_loss_value = train_loss_SUM/train_length
+                val_loss_value = val_loss_SUM/val_length
 
-            hyperbolic_train_loss_value = hyperbolic_train_loss_SUM/train_length
-            hyperbolic_val_loss_value = hyperbolic_val_loss_SUM/val_length
+                hyperbolic_train_loss_value = hyperbolic_train_loss_SUM/train_length
+                hyperbolic_val_loss_value = hyperbolic_val_loss_SUM/val_length
 
-            distributional_train_loss_value = distributional_train_loss_SUM/train_length
-            distributional_val_loss_value = distributional_val_loss_SUM/val_length
+                distributional_train_loss_value = distributional_train_loss_SUM/train_length
+                distributional_val_loss_value = distributional_val_loss_SUM/val_length
 
+            else:
+                train_loss_value = train_loss_SUM/train_weights_sum
+                val_loss_value = val_loss_SUM/val_weights_sum
+
+                hyperbolic_train_loss_value = hyperbolic_train_loss_SUM/train_weights_sum
+                hyperbolic_val_loss_value = hyperbolic_val_loss_SUM/val_weights_sum
+
+                distributional_train_loss_value = distributional_train_loss_SUM/train_weights_sum
+                distributional_val_loss_value = distributional_val_loss_SUM/val_weights_sum
+                
 
             losses_dict = {'Losses/Hyperbolic Losses': {'Train': hyperbolic_train_loss_value, 
                                                  'Val': hyperbolic_val_loss_value},
@@ -261,9 +287,8 @@ class MTNCI(nn.Module):
             self.log_losses(losses_dict = losses_dict, epoch = epoch + 1)
 
             print('{:^15}'.format('epoch {:^3}/{:^3}'.format(epoch, self.epochs)))
-            print('{:^15}'.format('Train loss: {:.4f}, Val loss: {:.4f}'.format(train_loss_SUM/len(self.datasetManager.X_train), 
-                                                                                val_loss_SUM/len(self.datasetManager.X_val)
-                                                                            )
+            print('{:^15}'.format('Train loss: {:.4f}, Val loss: {:.4f}'.format(train_loss_value, val_loss_value)
+                                                                            
                                 )
                 )
     def log_losses(self, losses_dict, epoch):
@@ -276,10 +301,212 @@ class MTNCI(nn.Module):
                                                 epoch = epoch)
 
     
+    def type_prediction_on_test(self, topn = None):
+        '''
+        compute results on testset in type prediction task
+        '''
+
+        test_predictions = self(torch.tensor(self.datasetManager.X_test, device=self.device))
+        labels = self.datasetManager.Y_test
+        entities = self.datasetManager.E_test
+
+        self.topn = topn
+
+        for space, preds in zip(['distributional', 'hyperbolic'], test_predictions):
+
+            print(' ...evaluating test predictions in {} space... '.format(space))
+
+            if self.device == torch.device("cuda"): 
+                preds = preds.detach().cpu().numpy()   
+            else:
+                preds = preds.numpy()
+
+            self.emb = Embedding()            
+            self.emb.set_embedding(self.datasetManager.concept_embeddings[space])
+            self.emb.set_name(space)
+            
+            if space == 'distributional':
+                self.emb.set_distance(cosine_dissimilarity)
+                self.emb.set_centroid_method(vector_mean)
+            elif space == 'hyperbolic':
+                self.emb.set_distance(hyper_distance)
+                self.emb.set_centroid_method(hyperbolic_midpoint)
+            
+            print('occurrence {}'.format(space))
+            micro, macro, concept_accuracies = self.occurrence_level_prediction(predictions = preds, 
+                                                                                labels = labels)
+            self.save_results(micro = micro, 
+                                macro = macro, 
+                                concept_accuracies = concept_accuracies, 
+                                level_name = 'Occurrence Level in {} space'.format(space))
+            print('entity {}'.format(space))
+            micro, macro, concept_accuracies = self.entity_level_prediction(predictions = preds, 
+                                                                            labels = labels, 
+                                                                            entities = entities)
+            
+            self.save_results(micro = micro, 
+                                macro = macro, 
+                                concept_accuracies = concept_accuracies, 
+                                level_name = 'Entity Level in {} space'.format(space))
+            print('concept1 {}'.format(space))
+            micro, macro, concept_accuracies = self.concept_level_prediction(predictions = preds,
+                                                                                labels = labels)
+
+            self.save_results(micro = micro, 
+                                macro = macro, 
+                                concept_accuracies = concept_accuracies, 
+                                level_name = 'Concept Level (induce from occurrencies) in {} space'.format(space))
+            print('concept2 {}'.format(space))
+            micro, macro, concept_accuracies = self.concept_level_prediction(predictions = preds,
+                                                                                labels = labels,
+                                                                                entities = entities)
+
+            self.save_results(micro = micro, 
+                                macro = macro, 
+                                concept_accuracies = concept_accuracies, 
+                                level_name = 'Concept Level (induce from entities) in {} space'.format(space))
+
+    def compute_metrics(self, total, concept_accuracies, elements_number_for_concept, predictions, labels):
+        corrects_n = 0
+        
+        for pred, label in zip(predictions, labels):
+            neigh = self.emb.get_neigh(vector = pred, top = self.topn)
+            if label in neigh:
+                corrects_n += 1
+                concept_accuracies[label] += 1
+        
+        concept_accuracies = {s: concept_accuracies[s]/elements_number_for_concept[s] for s in set(labels)}
+        micro_average_accuracy = corrects_n/total
+        macro_average_accuracy = np.mean(list(concept_accuracies.values()))
+
+        return micro_average_accuracy, macro_average_accuracy, concept_accuracies
+
+    def occurrence_level_prediction(self, predictions, labels):
+
+        corrects_n = 0
+        total_n = len(labels)
+        concept_accuracies = {s:0 for s in set(labels)}
+        concept_number = {s:len([l for l in labels if l == s]) for s in set(labels)}
+
+        return self.compute_metrics(total=total_n,
+                                    concept_accuracies=concept_accuracies,
+                                    elements_number_for_concept=concept_number,
+                                    predictions= predictions,
+                                    labels = labels)        
+
+    def entity_level_prediction(self, predictions, labels, entities):
+        entities_dict = {e: [v for v, entity in zip(predictions, entities) if entity == e] for e in set(entities)}
+        entities_labels = {e: l for e, l in zip(entities, labels)}
+
+        entities_predictions = self.induce_vector(entities_dict)
+
+        if entities_predictions.keys() != entities_labels.keys():
+            raise Exception('keys does not match, check the induce method') from e
+        
+        corrects_n = 0
+        total_n = len(set(entities))
+        concept_accuracies = {s:0 for s in set(labels)}
+        concept_number = {s:len([e for e in labels if e == s]) for s in set(labels)}
+
+        entity_predictions_list = list(entities_predictions.values())
+        entity_labels_list = list(entities_labels.values())  
+
+        return self.compute_metrics(total=total_n,
+                                    concept_accuracies = concept_accuracies,
+                                    elements_number_for_concept=concept_number,
+                                    predictions = entity_predictions_list,
+                                    labels = entity_labels_list)
+
+
+    def concept_level_prediction(self, predictions, labels, entities = None):
+        if entities:
+            # induce entities and then induce concepts from entities
+            entities_dict = {e: [v for v, entity in zip(predictions, entities) if entity == e] for e in set(entities)}
+            entities_labels = {e: l for e, l in zip(entities, labels)}
+
+            entities_vectors = self.induce_vector(entities_dict)
+
+            if entities_vectors.keys() != entities_labels.keys():
+                raise Exception('keys does not match, check the induce method') from e
+            
+            predictions = list(entities_vectors.values())
+            labels = list(entities_labels.values())  
+
+        concepts_dict = {s: [v for v, label in zip(predictions, labels) if label == s] for s in set(labels)}
+
+        concept_vectors = self.induce_vector(concepts_dict)
+        corrects_n = 0
+        total_n = len(set(labels))
+        concept_accuracies = {s:0 for s in set(labels)}
+        concept_number = {s: 1 for s in set(labels)}
+
+        concept_vectors_list = list(concept_vectors.values())
+        concept_labels_list = list(concept_vectors.keys())  
+
+
+        return self.compute_metrics(total=total_n,
+                                    concept_accuracies = concept_accuracies,
+                                    elements_number_for_concept=concept_number,
+                                    predictions = concept_vectors_list,
+                                    labels = concept_labels_list)
+
+    
+    def induce_vector(self, clusters_dict):
+        return {e: self.emb.get_centroid(v) for e, v in clusters_dict.items()}
+
+
+    def save_results(self, micro, macro, concept_accuracies, level_name):
+        with open('results/results.txt', 'a') as out:
+            out.write('------------------------ topn: {}--------------------------\n'.format(self.topn))
+            out.write('\n{} results: \n'.format(level_name))
+            out.write('\t micro average accuracy: {:.4f}\n'.format(micro))
+            out.write('\t macro average accuracy: {:.4f}\n'.format(macro))
+
+            out.write('Accuracy for each concept:\n')
+
+            for concept, acc in concept_accuracies.items():
+                out.write('\t{:15}: {:4.2f}\n'.format(concept, acc))
+
+
+
+class Embedding:
+
+    def set_name(self, name):
+        self.name = name
+
+    def set_embedding(self, embedding):
+        self.embedding = embedding
+
+    def set_distance(self, distance):
+        self.distance = distance
+
+    def get_vector(self, label):
+        try:
+            return self.embedding[label]    
+        except:
+            raise Exception('label not this embedding ({}'.format(self.name)) from e
+
+    def get_neigh(self, vector, top = None):
+        if not top:
+            top = len(self.embedding)
+        neigh, similarities = self.find_neigh(vector, top)
+        return neigh
+
+    def find_neigh(self, vec, topn):
+        dists = {}
+        for k, v in self.embedding.items():
+            dists[k] = self.distance(v, vec)
+        return [a for a, b in sorted(dists.items(), key=lambda item: item[1])[:topn]], [b for a, b in sorted(dists.items(), key=lambda item: item[1])[:topn]]
+
+    def set_centroid_method(self, method):
+        self.centroid_method = method
+
+    def get_centroid(self, vectors):
+        return self.centroid_method(vectors)
 
 class Prediction:
 
-    def __init__(self, device, weighted = False):
+    def __init__(self, device = None, weighted = False):
         self.LOSSES = {'cosine_dissimilarity': 'COSD',
                        'hyperbolic_distance': 'HYPD',
                        'regularized_hyperbolic_distance': 'RHYPD',
@@ -377,22 +604,3 @@ class regularizedPoincareDistanceLoss(poincareDistanceLoss):
             l1 = self.mse(pred, true)
         
         return acos**self.regul[2] + l0 * self.regul[0] + l1 * self.regul[1]
-
-# class lorentzDistanceLoss(Loss):
-
-#     def acosh(self, x):
-#         return torch.log(x + torch.sqrt(x**2-1))
-
-#     def hyperboloid_projection(v, r = 1):
-#         n = norm(v)
-#         t = [(r**2 + (n ** 2)) / (r**2 - (n ** 2))]
-#         projected = [(2 * r**2 * vs) /(r**2 - (n ** 2)) for vs in v]
-#         projected.extend(t)
-#         return np.array(projected)
-
-#     def inverse_projection(v, r):
-#         return np.array([vs/(r**2 + v[-1]) for vs in v[:-1]])
-
-#     def compute_loss(self, pred, true):
-#         hyperboloid_pred = self.hyperboloid_projection(v = pred)
-        
