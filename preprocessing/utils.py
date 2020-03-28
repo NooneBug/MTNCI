@@ -2,6 +2,7 @@ import pickle
 import numpy as np
 from numpy import dot
 from numpy.linalg import norm
+from sklearn.metrics.pairwise import euclidean_distances
 
 
 def save_data_with_pickle(relative_path, data):
@@ -56,4 +57,7 @@ def hyperboloid_projection(v, r):
 
 def inverse_projection(v, r):
     return np.array([vs/(r**2 + v[-1]) for vs in v[:-1]])
-    
+
+
+def euclidean_similarity(*args):
+    return 1/(1 + euclidean_distances(*args))

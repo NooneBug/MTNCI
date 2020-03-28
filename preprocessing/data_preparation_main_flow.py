@@ -32,8 +32,6 @@ LENGTH = 100000
 avoid_multilabeling = True
 experimental = False
 
-
-
 def experimental_run(list_of_classes):
     # N = [1]
     ENTITIES = [0.25, 0.5, 0.75, 1]
@@ -156,6 +154,8 @@ if __name__ == "__main__":
     void_types = [t for t, v in entity_dict.items() if v == []]
 
     pruned_G = remove_void_types(G, void_types)
+    list_of_classes = [n for n in pruned_G.nodes()]
+
     print("the pruned graph is a tree: {}".format(nx.is_tree(pruned_G)))
 
     # %%
@@ -166,6 +166,7 @@ if __name__ == "__main__":
         print('starting experimenta run')
         experimental_run(list_of_classes = list_of_classes)
     else:
+
         c = CorpusManager()
         c.read_corpus(CORPUS_PATH, LENGTH)
         c.create_all_entities(entity_dict, concepts=list_of_classes)    

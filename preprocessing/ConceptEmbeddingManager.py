@@ -47,14 +47,15 @@ class ConceptEmbedding():
         '''
         self.model_name = model_name
 
-    def setup_embedding(self, embedding_name):
+    def setup_embedding(self, embedding_name, save_path = None):
         '''
         setup the embedding creation, needs to be reimplemented in each class
         :params
             embedding_name: the relative path in which the embedding will be saved, will be combined with EMBEDDING_PATH
         '''
         print('building the {} concept embedding'.format(self.model_name))
-        self.save_path = EMBEDDING_PATH + embedding_name
+        if save_path:
+            self.save_path = save_path + embedding_name
     
     def save_edgelist(self, edgelist, file):
         with open(file, 'w') as out:
@@ -96,7 +97,7 @@ class HyperEEmbeddingManager(ConceptEmbedding):
         self.save_edgelist(edgelist = ordered_edgelist, file = DATA_PATH + 'MTNCI_edgelist')
         
 
-    def create_embedding(self, embedding_name, dimensions = 2):
+    def create_embedding(self, embedding_name, save_path = None, dimensions = 2):
         
         '''
         combines docker and shell commands to build and deploy HyperE
@@ -106,7 +107,7 @@ class HyperEEmbeddingManager(ConceptEmbedding):
         '''
         
         self.set_model_name(self.HYPER_E)
-        self.setup_embedding(embedding_name)
+        self.setup_embedding(embedding_name= embedding_name, save_path=save_path)
         
         if type(dimensions) != int:
             raise Exception('Dimensions needs to be a number!!')
@@ -121,9 +122,9 @@ class HyperEEmbeddingManager(ConceptEmbedding):
         os.system('docker stop MTNCI_HYPERE_DOCKER')
         os.system('docker container rm MTNCI_HYPERE_DOCKER')
         print(os.getcwd())
-        os.system('mv {} ../../source_files/embeddings/'.format(embedding_name + '_to_parse'))
+        os.system('mv {} ../../source_files/HyperE_utilities/'.format(embedding_name + '_to_parse'))
 
-        self.embedding, tau = self.import_stanford_hyperbolic(PATH = self.save_path + '_to_parse')
+        self.embedding, tau = self.import_stanford_hyperbolic(PATH = '../../source_files/HyperE_utilities/{}'.format(embedding_name + '_to_parse'))
         save_data_with_pickle(self.save_path, self.embedding)
         
     def import_stanford_hyperbolic(self, PATH):
@@ -201,7 +202,7 @@ class Type2VecEmbeddingManager(ConceptEmbedding):
         self.read_tree(tree_path)
         self.pruned_tree = load_data_with_pickle(pruned_tree_path)
 
-    def create_embedding(self, embedding_name, remove_mode, concept_corpus_path):
+    def create_embedding(self, embedding_name, remove_mode, concept_corpus_path, save_path):
         
         '''
         build the embedding according to the type2vec project
@@ -211,7 +212,7 @@ class Type2VecEmbeddingManager(ConceptEmbedding):
         '''
         self.concept_corpus_path = concept_corpus_path
         self.model_name = 'Type2Vec'
-        self.setup_embedding(embedding_name)
+        self.setup_embedding(embedding_name = embedding_name, save_path=save_path)
         self.remove_mode = remove_mode
         self.cleaned_corpus = self.clean_corpus(known = list(self.pruned_tree.nodes()))
         self.embedding = self.train_t2v()

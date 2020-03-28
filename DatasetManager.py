@@ -10,13 +10,12 @@ import torch
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from abc import ABC, abstractmethod
 from sklearn.preprocessing import normalize
 from sklearn.metrics import silhouette_score
 from sklearn.metrics.pairwise import cosine_similarity
 from random import sample
 import copy
-
+from Filters import Filter, FilterOnClassCohesion
 
 from preprocessing.utils import load_data_with_pickle, save_data_with_pickle
 from preprocessing.CorpusManager import CorpusManager
@@ -123,14 +122,14 @@ class DatasetManager():
         self.Y = load_data_with_pickle(Y_PATH)
         self.entities = load_data_with_pickle(ENTITIES_PATH)
         self.print_loaded()
-
-    def load_concept_embeddings(self, CONCEPT_EMBEDDING_PATHS):
+    
+    def load_concept_embeddings(self, CONCEPT_EMBEDDING_PATHS, nickel = False):
         '''
         load the concept embedding and transform that in dicts,
         for example: 
             self.concept_embedding is a dict in the format {concept_embedding_name_0: {concept_name_0: vector,
                                                                                        ...
-                                                                                       concetp_name_N: vector},
+                                                                                       concept_name_N: vector},
                                                                                       },
                                                             concept_embedding_name_1: {concept_name_0: vector,
                                                                                        ...
@@ -141,16 +140,31 @@ class DatasetManager():
         '''
 
         self.setup_print_times(keywords = 'concept embeddings')
+        if not nickel:
+            concept_embeddings = [load_data_with_pickle(x) for x in CONCEPT_EMBEDDING_PATHS]
 
-        concept_embeddings = [load_data_with_pickle(x) for x in CONCEPT_EMBEDDING_PATHS]
+            self.concept_embeddings = {'hyperbolic': concept_embeddings[1],
+                                    'distributional':concept_embeddings[0]}
+            # transform gensim embedding in a dict {key: vector}
+            self.concept_embeddings['distributional'] = {k: self.concept_embeddings['distributional'][k] for k in self.concept_embeddings['distributional'].wv.vocab}
+            # concept_embeddings['hyperbolic'] = concept_embeddings['hyperbolic'][0]
+        else:
+            self.concept_embeddings = {}
+            self.concept_embeddings['distributional'] = load_data_with_pickle(CONCEPT_EMBEDDING_PATHS[0])
+            self.concept_embeddings['distributional'] = {k: self.concept_embeddings['distributional'][k] for k in self.concept_embeddings['distributional'].wv.vocab}
+            
+            self.concept_embeddings['hyperbolic'] = self.load_nickel(CONCEPT_EMBEDDING_PATHS[1])
 
-        self.concept_embeddings = {'hyperbolic': concept_embeddings[1],
-                                   'distributional':concept_embeddings[0]}
-        # transform gensim embedding in a dict {key: vector}
-        self.concept_embeddings['distributional'] = {k: self.concept_embeddings['distributional'][k] for k in self.concept_embeddings['distributional'].wv.vocab}
-        # concept_embeddings['hyperbolic'] = concept_embeddings['hyperbolic'][0]
         self.print_loaded()
-        
+    
+    def load_nickel(self, path):
+        emb = torch.load('../source_files/embeddings/16_3_nickel.pth')
+
+        embeddings = emb['embeddings']
+        objects = emb['objects']
+
+        return {k: embeddings[objects.index(k)].numpy() for k in objects}
+
     def split_data_by_unique_entities(self, test_sizes = {'test' : 0.1, 'val': 0.1},
                                             exclude_min_threshold = 10):
         '''
@@ -286,26 +300,24 @@ class DatasetManager():
         else:
             return [x[0] for i, x in enumerate(A) if i < frac], [x[1] for i, x in enumerate(A) if i < frac], [x[2] for i, x in enumerate(A) if i < frac]
 
-    def save_datasets(self, save_path, ID):
+    def save_datasets(self, save_path):
         '''
-        saves datasets in the save_path using ID as prefix
+        saves datasets in the save_path
 
         params:
             save_path: the path in which save datasets
-            ID: the prefix that will be used on saved datasets names
-        
         '''
-        save_data_with_pickle(save_path + ID + 'filtered_X_train', self.X_train)
-        save_data_with_pickle(save_path + ID + 'filtered_X_val', self.X_val)
-        save_data_with_pickle(save_path + ID + 'filtered_X_test', self.X_test)
+        save_data_with_pickle(save_path + 'filtered_X_train', self.X_train)
+        save_data_with_pickle(save_path + 'filtered_X_val', self.X_val)
+        save_data_with_pickle(save_path + 'filtered_X_test', self.X_test)
 
-        save_data_with_pickle(save_path + ID + 'filtered_Y_train', self.Y_train)
-        save_data_with_pickle(save_path + ID + 'filtered_Y_val', self.Y_val)
-        save_data_with_pickle(save_path + ID + 'filtered_Y_test', self.Y_test)
+        save_data_with_pickle(save_path + 'filtered_Y_train', self.Y_train)
+        save_data_with_pickle(save_path + 'filtered_Y_val', self.Y_val)
+        save_data_with_pickle(save_path + 'filtered_Y_test', self.Y_test)
 
-        save_data_with_pickle(save_path + ID + 'filtered_entities_train', self.E_train)
-        save_data_with_pickle(save_path + ID + 'filtered_entities_val', self.E_val)
-        save_data_with_pickle(save_path + ID + 'filtered_entities_test', self.E_test)
+        save_data_with_pickle(save_path + 'filtered_entities_train', self.E_train)
+        save_data_with_pickle(save_path + 'filtered_entities_val', self.E_val)
+        save_data_with_pickle(save_path + 'filtered_entities_test', self.E_test)
 
 
     def print_statistic_on_dataset(self):
@@ -493,11 +505,14 @@ class DatasetManager():
         '''
         normalize the input vectors 
         '''
+        print('... normalization ...')
+        self.X = normalize(self.X, axis = 0)
         self.X = normalize(self.X, axis = 1)
 
 
-    def setup_filter(self, filter_name, log_file_path, filtered_dataset_path, 
-                            X = None, Y = None, entities = None, selfXY = True,
+
+    def setup_filter(self, filter_name, log_file_path, filtered_dataset_path, cluster_distance = cosine_similarity,
+                            X = None, Y = None, entities = None, selfXY = True, 
                             threshold = 0.6, quantile = 0.05):
         '''
         setup the filter which will be used to filter input vectors (you don't say)
@@ -513,7 +528,7 @@ class DatasetManager():
         
         self.selected_filter.set_parameters(log_file_path = log_file_path, 
                                             filtered_dataset_path = filtered_dataset_path,
-                                            threshold=threshold, quantile = quantile)
+                                            threshold=threshold, quantile = quantile, cluster_distance = cluster_distance)
 
         if selfXY:
             self.selected_filter.set_data(X = self.X, Y = self.Y, entities = self.entities)
@@ -521,6 +536,8 @@ class DatasetManager():
             self.selected_filter.set_data(X = X, Y = Y, entities = entities)
         else:
             raise Exception('Error: pass an X and an Y or set selfXY to true!!!') from e
+
+        
     
     def filter(self):
         '''
@@ -528,503 +545,67 @@ class DatasetManager():
         '''
         self.X, self.Y, self.entities = self.selected_filter.filter()
 
-
-class Filter():
-
-    '''
-    parent class of each filter, defines the base methods
-    '''
-
-    def __init__(self, log_file_path = None, filtered_dataset_path = None):
-        '''
-        inizialize some values, 
-        declare in FILTERS the name of all filter
-        '''
-        self.FILTERS = {'ClassCohesion': 'CC'}
-    
-    def set_data(self, X, Y, entities):
-        '''
-        set the data to filter
-
-        params:
-            X: the input to filter
-            Y: the labels of the inputs
-            entities: the entity names of the input
-        '''
-        self.X = X
-        self.Y = Y
-        self.entities = entities
-
-    def log(self, text):
-        '''
-        write the text on the log
         
-        params:
-            text: the text to be logged
-        '''
-        with open(self.log_file, 'a') as out:
-            out.write(text + '\n')
 
-    def select_filter(self, filter_name):
-        '''
-        select the filter based on filter_name
+           
+class ShimaokaMTNCIDatasetManager(DatasetManager):
 
-        params:
-            filter_name: the name of the filter
-        '''
-        if filter_name == self.FILTERS['ClassCohesion']:
-            return FilterOnClassCohesion()
-
-    @abstractmethod
-    def filter():
-        pass
-
-    @abstractmethod
-    def save_data():
-        pass
-
-
-class FilterOnClassCohesion(Filter):
-
-    def save_data(self):
-        '''
-        save the filtered dataset to the filreted_dataset_path
-        '''
-        if not (len(self.X) == len(self.Y) and len(self.Y) == len(self.entities)):
-            raise Exception('Error in filtering process, datasets are not aligned')
-
-        save_data_with_pickle(self.filtered_dataset_path + 'X', self.X)
-        save_data_with_pickle(self.filtered_dataset_path + 'Y', self.Y)
-        save_data_with_pickle(self.filtered_dataset_path + 'entities', self.entities)
-
-    def log_out_words(self, out_words):
-        '''
-        logs the words filtered out by the filtering process
-
-        params:
-            out_words: a dict {concept: [list of words]} which will be logged 
-        '''
-        with open('../source_files/logs/{}_out_words_log.txt'.format(self.threshold), 'w') as out:
-            out.write('\n ------------------------------------------------------ \n')
-            for concept, words in sorted(out_words.items()):
-                out.write('{}: {} words filtered, {} unique words\n'.format(concept, len(words), len(set(words))))
-                c = sorted(Counter(words).items())
-                for couple in c:
-                    out.write('\t\t {}: {}\n'.format(couple[0], couple[1]))
-
-
-    def log_in_words(self, in_words):
-        '''
-        logs the maintained words by the filtering process
-
-        params:
-            in_words: a dict {concept: [list of words]} which will be logged 
-        '''
-        with open('../source_files/logs/{}_in_words_log.txt'.format(self.threshold), 'w') as out:
-            out.write('\n ------------------------------------------------------ \n')
-            for concept, words in sorted(in_words.items()):
-                out.write('{}: {} words maintained, {} unique words\n'.format(concept, len(words), len(set(words))))
-                c = sorted(Counter(words).items())
-                for couple in c:
-                    out.write('\t\t {}: {}\n'.format(couple[0], couple[1]))
-
-    def filter_dataset_on_numerosity(self, low_threshold):
-        '''
-        filters the dataset based on the numerosity of concept vectors, 
-            if a concept has less than filtering_threshold vectors will be filtered out
-        '''
-        self.entities_dataset = {k: vs for k, vs in self.entities_dataset.items() if len(self.dataset[k]) > low_threshold} 
-        self.dataset = {k: vs for k, vs in self.dataset.items() if len(vs) > low_threshold}
+    def set_batched_data(self, train, val, test):
+        self.Y_train = train['labels']
+        self.Y_val = val['labels']
+        self.Y_test = test['labels']
         
-    def filter(self):
-        '''
-        define the pipeline of the filter
-        '''
+        self.train_batched_datas = train['data']
+        self.val_batched_datas = val['data']
+        self.test_batched_datas = test['data']
 
-        filtering_threshold = 100
+        self.train_batched_labels = self.batch_labels(train)
+        self.val_batched_labels = self.batch_labels(val)
+        self.train_batched_labels = self.batch_labels(test)
+
+
+        self.create_numeric_dataset()
+
+        self.Y_numeric_train = torch.tensor(self.Y_numeric_train, device = self.device)
+        self.Y_numeric_val = torch.tensor(self.Y_numeric_val, device = self.device)
+        self.Y_numeric_test = torch.tensor(self.Y_numeric_test, device = self.device)
         
-        print('--- FILTERING PROCESS ---')
-        print('... creating dataset ...')
+        n_train = {'data': train['data'], 'labels' : self.Y_numeric_train}
+        n_val = {'data': val['data'], 'labels' : self.Y_numeric_val}
+        n_test = {'data': test['data'], 'labels' : self.Y_numeric_test}
 
-        self.create_datasets()
-        self.filter_dataset_on_numerosity(filtering_threshold)
-        print('... creating clusters ...')
-        self.clusters()
+        self.batched_Y_train = self.batch_labels(n_train)
+        self.batched_Y_val = self.batch_labels(n_val)
+        self.batched_Y_test = self.batch_labels(n_test)
 
-        # print('... computing sampled silhouette ...')
-        # silh = self.sampled_silhouette()
-        # print('silhouette score: {}'.format(silh))
-        # self.log('silhouette score: {}'.format(silh))
-
-        print('... filtering out quantiles until {} cohesion is reached ... (quantile = {})'.format(self.threshold, self.quantile))
-        t = time.time()
-        filtered_dataset, filtered_entities_dataset, out_words = self.filter_quantile(threshold = self.threshold, 
-                                                                                      quantile=self.quantile,
-                                                                                    filtering_threshold=filtering_threshold)
-        print('filtered in {:.2f} seconds'.format(time.time() - t))
-        filtered_dataset = {k: vs for k, vs in filtered_dataset.items() if len(vs) > filtering_threshold}
-        filtered_entities_dataset = {k: entities for k, entities in filtered_entities_dataset.items() if len(entities) > filtering_threshold}
-
-        self.log_out_words(out_words)
-        self.log_in_words(filtered_entities_dataset)
-
-        print('vectors in filtered dataset:{}'.format(len([v for k, vs in filtered_dataset.items() for v in vs])))
-        self.log('vectors in filtered dataset:{}'.format(len([v for k, vs in filtered_dataset.items() for v in vs])))
         
-        self.dataset = filtered_dataset
-        self.entities_dataset = filtered_entities_dataset
+        self.create_aligned_dataset()
 
-        max_number = 4000
-        self.reduce_max_number(max_number)
+        self.aligned_y_train = {k: torch.tensor(v, device=self.device) for k, v in self.aligned_y_train.items()}
+        self.aligned_y_val = {k: torch.tensor(v, device=self.device) for k, v in self.aligned_y_val.items()}
+        self.aligned_y_test = {k: torch.tensor(v, device=self.device) for k, v in self.aligned_y_test.items()}
 
-        print('... re-creating clusters ...')
-        self.clusters()
+        n_train = {'data': train['data'], 'labels' : self.aligned_y_train}
+        n_val = {'data': val['data'], 'labels' : self.aligned_y_val}
+        n_test = {'data': test['data'], 'labels' : self.aligned_y_test}
+        
+        self.batched_aligned_train = self.batch_labels(n_train, lisst=False)
+        self.batched_aligned_val = self.batch_labels(n_val, lisst=False)
+        self.batched_aligned_test = self.batch_labels(n_test, lisst=False)
 
-        # print('... re-computing sampled silhouette ...')
-        # silh = self.sampled_silhouette()
-        # print('silhouette score: {}'.format(silh))
-        # self.log('silhouette score on filtered dataset: {}'.format(silh))
+    def batch_labels(self, data, lisst = True):
+        batched = []
+        if lisst:
+            length = len(data['labels'])
+        else:
+            length = len(data['labels']['distributional'])
 
-        # self.save_data()
-
-        X = [vector for concept, vectors in self.dataset.items() for vector in vectors]
-        Y = [concept for concept, vectors in self.dataset.items() for vector in vectors]
-        entities = [entity for concept, entities in self.entities_dataset.items() for entity in entities]
-
-        return X, Y, entities
-
-    def reduce_max_number(self, max_number):
-        counter = {c:len(vectors) for c, vectors in self.dataset.items()}
-
-        support_dict = {}
-        new_dataset = {}
-        new_entities_dataset = {}
-        for c, count in counter.items():
-            if count > max_number:
-                
-                support_list = [(vec, ent) for vec, ent in zip(self.dataset[c], self.entities_dataset[c])]
-
-                sample = random.sample(support_list, max_number)
-                new_dataset[c] = [s[0] for s in sample]
-                new_entities_dataset[c] = [s[1] for s in sample]
-
+        offset = len(data['data'][0][0])
+        for i in range(0, length, offset):
+            if lisst:
+                batched.append(data['labels'][i: i + offset])
             else:
-                new_dataset[c] = self.dataset[c] 
-                new_entities_dataset[c] = self.entities_dataset[c]
-
-        self.dataset = new_dataset
-        self.entities_dataset = new_entities_dataset
-
-    def clusters(self):
-        '''
-        create the clusters sizes of the dataset, clean the returns and log the cohesions, 
-        '''
-        self.cluster_sizes, cohesions = self.create_clusters()
-
-        self.cohesions = {k: np.mean(v) for k, v in cohesions.items()}
-
-        self.log(self.get_stats(cohesions = self.cohesions))
-
-    def sampled_silhouette(self):
-        '''
-        compute the silhouted based on representative samples of each concept
-
-        returns:
-            silhouette_score: the silhouette value
-        '''
-        X = [vector for concept, vectors in self.dataset.items() for vector in vectors]
-        Y = [concept for concept, vectors in self.dataset.items() for vector in vectors]
-
-        print('number of vectors in the dataset: {}'.format(len(Y)))
-        self.log('number of vectors in the dataset: {}'.format(len(Y)))
+                batched.append([{'distributional': data['labels']['distributional'][i: i + offset],
+                                'hyperbolic': data['labels']['hyperbolic'][i: i + offset]}])
         
-        dataset = {y:[] for y in set(Y)}
-        for x, y in zip(X, Y):
-            dataset[y].append(x)
-        
-        sampled_dataset = {y: sample(dataset[y], self.cluster_sizes[y]) for y in set(Y)}
-        sampled_Y = [label for label, vectors in sampled_dataset.items() for x in sampled_dataset[label]]
-        sampled_X = [x for label, vectors in sampled_dataset.items() for x in sampled_dataset[label]]
-        
-        print('number of vectors in the sampled dataset: {}'.format(len(sampled_Y)))
-        self.log('number of vectors in the sampled dataset: {}'.format(len(sampled_Y)))
-        
-        return silhouette_score(sampled_X, sampled_Y, metric='cosine')
-
-    def set_parameters(self, log_file_path, filtered_dataset_path, threshold, quantile):
-        '''
-        set the filters parameters
-
-        params:
-            log_file_path: the path to the log file
-            filtered_dataset_path: the path in which save the the filtered dataset
-            threshold: the coherence to be reached by each concept cluster
-            quantile: the quantile which will be removed on each iteration until the threshold is not reached 
-        '''
-        self.log_file = log_file_path
-        self.filtered_dataset_path = filtered_dataset_path
-        self.threshold = threshold
-        self.quantile = quantile
-
-    def create_datasets(self):
-        '''
-        create the dataset which will be used in all the pipeline
-        '''
-        self.dataset = defaultdict(list)
-        self.entities_dataset = defaultdict(list)
-
-        for x, y, e in zip(self.X, self.Y, self.entities):
-            self.dataset[y].append(x)
-            self.entities_dataset[y].append(e)
-
-        
-        self.dataset = {k:values for k, values in self.dataset.items() if len(values) > 1}
-        self.entities_dataset = {k:entities for k, entities in self.entities_dataset.items() if len(entities) > 1}
-
-
-    def create_clusters(self, epsilon = 0.005, iterations = 5, patience_threshold = 10, max_size = 3000):
-        '''
-        for each concept compute the optimal size for a representative sample
-
-        params:
-            epsilon: the value of changement of mean coherence and std between one iteration sample and the successive 
-            iterations: the number of sample used to compute the mean coherence and the standard deviation
-            patience_threshold: the number of consecutive times in which both mean and standard deviant are lesser than the epsilon value
-            max_size: the maximum size of a cluster
-
-        returns:
-            cluster_sizes: the optimal size of each cluster
-            cohesions: the cohesion value of each cluster
-        '''
-        
-        print('vectors in dataset:{}'.format(len([v for k, vs in self.dataset.items() for v in vs])))
-        
-        distances = defaultdict(list)
-        xs = defaultdict(list)
-        cluster_sizes = {}
-        cohesions = {}
-
-        tot = len(self.dataset)
-        
-        T = time.time()
-
-        for i, (k, v) in enumerate(self.dataset.items()):
-
-            sample_size = 200
-
-            last_dist = 0    
-            difference = 1
-
-            t = time.time()
-
-            patience = 0
-            last_meann = 0
-
-            while patience < patience_threshold and sample_size < max_size:
-
-                cohesions[k] = []
-
-                for j in range(iterations):
-
-                    if sample_size < len(v):
-                        sam = sample(v, sample_size)
-                    else:
-                        sam = v
-
-                    xs[k].append(len(sam))
-                    
-                    cohesion = np.sum(np.tril(cosine_similarity(sam), -1))/sum([I + 1 for I in range(len(sam) - 1)])
-                    cohesions[k].append(cohesion)
-                    
-
-                meann = np.mean(cohesions[k])
-
-                difference_on_mean = abs(meann - last_meann)
-
-                last_meann = meann
-
-                standev = np.std(cohesions[k])
-
-                if standev < epsilon and difference_on_mean < epsilon:
-                    patience += 1
-                else:
-                    patience = 0
-
-                sample_size += 20
-
-            cluster_sizes[k] = len(sam)
-
-            output = '{:3}/{}: {:>6}/{:<6}, {:.2f} , {:6} seconds, {}'.format(i + 1, tot, len(sam), len(self.dataset[k]), meann, round(time.time() - t, 3), k)
-            print(output)
-            self.log(text = output)
-            t = time.time()
-            
-        print('total_time: {}'.format(round(time.time() - T, 3)))
-        self.log(text = 'total_time: {}'.format(round(time.time() - T, 3)))
-        
-        return cluster_sizes, cohesions
-
-    def filter_quantile(self, threshold, filtering_threshold = 2, quantile = 0.05):
-        
-        '''
-        for each concept, create a sample of the cluster size, compute the cohesion of each vector w.r.t the sample
-        and iterative exclude all quantiles, re-sample and recompute the cohesion until the threshold is reached 
-
-        params:
-            threshold: the cohesion value to be reached from each cluster
-            filtering_threshold: the minimum number of value in each cluster
-            quantile: the quantile to remove at each iteration
-
-        returns:
-            dataset_: the filtered dataset
-            entities_dataset_: the entities names of the filtered dataset
-            out_words: the filtered out entities names
-        '''
-
-        dataset_ = copy.deepcopy(self.dataset)
-        entities_dataset_ = copy.deepcopy(self.entities_dataset)
-        cohesions_ = copy.deepcopy(self.cohesions)
-        
-        filtered_dataset = {}
-        filtered_entities_dataset = {}
-
-        out_words = {k:[] for k, _ in dataset_.items()}
-
-        filtered_quantities = {k:0 for k in dataset_}
-        tot = len(dataset_)
-        
-        initial_length = {k: len(v) for k, v in dataset_.items()}
-        
-        first = True
-        filtered_cohesions = [0]
-        
-        all_time = time.time()
-        iterations = 0
-        while_time = time.time()
-        while filtered_cohesions and min(filtered_cohesions) < threshold:
-            
-            filter_counter = 0
-            filtered_cohesions = []
-            filtered_dataset = {k:[] for k, _ in dataset_.items()}
-            filtered_entities_dataset = {k: [] for k, _ in dataset_.items()}
-            t = time.time()
-            
-            for i, ((k, vs), (_, entities)) in enumerate(zip(dataset_.items(), entities_dataset_.items())):
-                if len(vs) != len(entities):
-                    raise Exception('ERROR IN VECTOR-ENTITIES ALIGNMENT!!') from e
-                if cohesions_[k] < threshold:
-                    if self.cluster_sizes[k] < len(vs):
-                        class_cluster = sample(vs, self.cluster_sizes[k])
-                    else:
-                        class_cluster = vs
-                    
-                    if len(class_cluster) >= filtering_threshold:
-
-                        computed_cohesions = np.mean(cosine_similarity(vs, class_cluster), axis=1)
-                        q = np.quantile(computed_cohesions, quantile, interpolation='nearest')
-
-                        computed_cohesion_mask = np.where(computed_cohesions <= q, 0, 1)
-
-                        for j, (v, e) in enumerate(zip(vs, entities)):
-                            if computed_cohesion_mask[j]:
-                                filtered_dataset[k].append(v)
-                                filtered_entities_dataset[k].append(e)
-                            else:
-                                filtered_quantities[k] += 1
-                                out_words[k].append(e)
-
-                        if len(filtered_dataset[k]) > filtering_threshold:
-                            if self.cluster_sizes[k] < len(filtered_dataset[k]):
-                                class_cluster = sample(filtered_dataset[k], self.cluster_sizes[k])
-                            else:
-                                class_cluster = filtered_dataset[k]
-                    
-                            if len(filtered_dataset[k]) != len(class_cluster):
-                                new_cohesion = np.sum(cosine_similarity(filtered_dataset[k], class_cluster))/(len(filtered_dataset[k] * len(class_cluster)))
-                            else:
-                                new_cohesion = np.sum(np.tril(cosine_similarity(filtered_dataset[k]), -1))/sum([I + 1 for I in range(len(filtered_dataset[k]) - 1)])
-                                                                            
-                            filtered_cohesions.append(new_cohesion)
-                            
-                            cohesions_[k] = new_cohesion
-                            verbose = True
-                            filter_counter += 1
-                            output = '    {:3}/{}: {:>6}/{:<6}, {:.3f} seconds, cohesion:{:.4f}, {}   '.format(i + 1, 
-                                                                                                tot, 
-                                                                                                initial_length[k] - filtered_quantities[k],
-                                                                                                initial_length[k],
-                                                                                                time.time() - t,
-                                                                                                new_cohesion,
-                                                                                                k)
-                            
-
-                            
-                        else:
-                            filtered_dataset[k] = []
-                            filtered_entities_dataset[k] = []
-                            verbose = False
-                            output = ' xx {:3}/{}: {} has not passed the filter process (no more vectors) xx'.format(i + 1, 
-                                                                                                              tot,
-                                                                                                              k)
-
-                    else:
-                        filtered_dataset[k] = []
-                        filtered_entities_dataset[k] = []
-                        verbose = False
-                        output = ' xx {:3}/{}: {} has not passed the filter process (no more vectors) xx'.format(i + 1, 
-                                                                                                          tot,
-                                                                                                          k)
-                        
-                else:
-                    filtered_dataset[k] = vs
-                    filtered_entities_dataset[k] = entities_dataset_[k]
-                    verbose = False
-                    output = ' << {:3}/{}: {:>6}/{:<6}, {:.3f} seconds, cohesion:{:.4f}, {} >>'.format(i + 1, 
-                                                                                                tot, 
-                                                                                                len(entities_dataset_[k]),
-                                                                                                initial_length[k],
-                                                                                                time.time() - t,
-                                                                                                cohesions_[k],
-                                                                                                k)
-                if verbose:
-                    print(output)
-                self.log('{}'.format(output))
-
-                t = time.time()
-                
-            dataset_ = copy.deepcopy(filtered_dataset)
-            entities_dataset_ = copy.deepcopy(filtered_entities_dataset)
-            iterations += 1
-            output = '  {}^ iteration : {:.2f} seconds (total: {:.2f} seconds), {} quantiles filtered out in this iteration'.format(iterations,
-                                                                                                                    time.time() - while_time,
-                                                                                                                    time.time() - all_time,
-                                                                                                                    filter_counter)
-            print(output)
-            self.log(output)
-            while_time = time.time()
-            
-        return dataset_, entities_dataset_, out_words
-
-    def get_stats(self, cohesions):
-        '''
-        get some stats of the cluster cohesions
-
-        params:
-            a dict which have all cohesions on which stats will be computed
-        returns:
-            the stats
-        '''
-
-        v = list(cohesions.values())
-
-        print('SINGLE WORDS CLUSTERS\n')
-        print('minimum mean cluster similarities: {}'.format(round(min(v), 4)))
-        print('maximum mean cluster similarities: {}'.format(round(max(v), 4)))
-        print('mean of mean cluster similarities: {}'.format(round(np.mean(v), 4)))
-        print('std  of mean cluster similarities: {}'.format(round(np.std(v), 4)))
-
-        return 'SINGLE WORDS CLUSTERS\n' + \
-            'minimum mean cluster similarities: {}\n'.format(round(min(v), 4)) + \
-            'maximum mean cluster similarities: {}\n'.format(round(max(v), 4)) + \
-            'mean of mean cluster similarities: {}\n'.format(round(np.mean(v), 4)) + \
-            'std  of mean cluster similarities: {}'.format(round(np.std(v), 4))
+        return batched

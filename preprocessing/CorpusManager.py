@@ -262,7 +262,7 @@ class CorpusManager():
         """
         return [t[0] for t in self.word_indexes[word]] #extract the row index from each tuple
 
-    def check_entity_in_row(self, ENTITY, ROW, verbose):
+    def check_entity_in_row(self, ENTITY, ROW, verbose = False):
         """
         returns the indexes of all occurrences of an entity name (ENTITY) in a sentence (ROW)
         :param 

@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 *.png
 .ipynb_checkpoints/
+choi-like-datasets/
+results/
