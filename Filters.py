@@ -112,6 +112,7 @@ class FilterOnClassCohesion(Filter):
         filters the dataset based on the numerosity of concept vectors, 
             if a concept has less than filtering_threshold vectors will be filtered out
         '''
+        print('filter out class with less than {} vectors'.format(low_threshold))
         self.entities_dataset = {k: vs for k, vs in self.entities_dataset.items() if len(self.dataset[k]) > low_threshold} 
         self.dataset = {k: vs for k, vs in self.dataset.items() if len(vs) > low_threshold}
         
@@ -512,126 +513,126 @@ class FilterOnClassCohesion(Filter):
 
 # class MultilabelFilterOnClassCohesion(FilterOnClassCohesion):
     
-    def filter(self):
-        '''
-        define the pipeline of the filter
-        '''
+#     def filter(self):
+#         '''
+#         define the pipeline of the filter
+#         '''
 
-        filtering_threshold = 100
+#         filtering_threshold = 100
         
-        print('--- FILTERING PROCESS ---')
-        print('... creating dataset ...')
+#         print('--- FILTERING PROCESS ---')
+#         print('... creating dataset ...')
 
-        self.create_datasets()
-        self.filter_dataset_on_numerosity(filtering_threshold)
-        print('... creating clusters ...')
-        self.clusters()
+#         self.create_datasets()
+#         self.filter_dataset_on_numerosity(filtering_threshold)
+#         print('... creating clusters ...')
+#         self.clusters()
 
-        # print('... computing sampled silhouette ...')
-        # silh = self.sampled_silhouette()
-        # print('silhouette score: {}'.format(silh))
-        # self.log('silhouette score: {}'.format(silh))
+#         # print('... computing sampled silhouette ...')
+#         # silh = self.sampled_silhouette()
+#         # print('silhouette score: {}'.format(silh))
+#         # self.log('silhouette score: {}'.format(silh))
 
-        print('... filtering out quantiles until {} cohesion is reached ... (quantile = {})'.format(self.threshold, self.quantile))
-        t = time.time()
-        self.filtered_dataset, self.filtered_entities_dataset, self.out_words = self.filter_quantile(threshold = self.threshold, 
-                                                                                      quantile=self.quantile,
-                                                                                      filtering_threshold=filtering_threshold)
+#         print('... filtering out quantiles until {} cohesion is reached ... (quantile = {})'.format(self.threshold, self.quantile))
+#         t = time.time()
+#         self.filtered_dataset, self.filtered_entities_dataset, self.out_words = self.filter_quantile(threshold = self.threshold, 
+#                                                                                       quantile=self.quantile,
+#                                                                                       filtering_threshold=filtering_threshold)
 
-        filtered_dataset, filtered_entities_dataset, out_words_2 = self.multilabel_quantile_filter(threshold = self.threshold, 
-                                                                                                    quantile=self.quantile,
-                                                                                                    filtering_threshold=filtering_threshold)
+#         filtered_dataset, filtered_entities_dataset, out_words_2 = self.multilabel_quantile_filter(threshold = self.threshold, 
+#                                                                                                     quantile=self.quantile,
+#                                                                                                     filtering_threshold=filtering_threshold)
 
-        print('filtered in {:.2f} seconds'.format(time.time() - t))
-        filtered_dataset = {k: vs for k, vs in filtered_dataset.items() if len(vs) > filtering_threshold}
-        filtered_entities_dataset = {k: entities for k, entities in filtered_entities_dataset.items() if len(entities) > filtering_threshold}
+#         print('filtered in {:.2f} seconds'.format(time.time() - t))
+#         filtered_dataset = {k: vs for k, vs in filtered_dataset.items() if len(vs) > filtering_threshold}
+#         filtered_entities_dataset = {k: entities for k, entities in filtered_entities_dataset.items() if len(entities) > filtering_threshold}
 
-        self.log_out_words(self.out_words)
-        self.log_in_words(filtered_entities_dataset)
+#         self.log_out_words(self.out_words)
+#         self.log_in_words(filtered_entities_dataset)
 
-        print('vectors in filtered dataset:{}'.format(len([v for k, vs in filtered_dataset.items() for v in vs])))
-        self.log('vectors in filtered dataset:{}'.format(len([v for k, vs in filtered_dataset.items() for v in vs])))
+#         print('vectors in filtered dataset:{}'.format(len([v for k, vs in filtered_dataset.items() for v in vs])))
+#         self.log('vectors in filtered dataset:{}'.format(len([v for k, vs in filtered_dataset.items() for v in vs])))
         
-        self.dataset = filtered_dataset
-        self.entities_dataset = filtered_entities_dataset
+#         self.dataset = filtered_dataset
+#         self.entities_dataset = filtered_entities_dataset
 
-        max_number = 4000
-        self.reduce_max_number(max_number)
+#         max_number = 4000
+#         self.reduce_max_number(max_number)
 
-        print('... re-creating clusters ...')
-        self.clusters()
+#         print('... re-creating clusters ...')
+#         self.clusters()
 
-        # print('... re-computing sampled silhouette ...')
-        # silh = self.sampled_silhouette()
-        # print('silhouette score: {}'.format(silh))
-        # self.log('silhouette score on filtered dataset: {}'.format(silh))
+#         # print('... re-computing sampled silhouette ...')
+#         # silh = self.sampled_silhouette()
+#         # print('silhouette score: {}'.format(silh))
+#         # self.log('silhouette score on filtered dataset: {}'.format(silh))
 
-        # self.save_data()
+#         # self.save_data()
 
-        X = [vector for concept, vectors in self.dataset.items() for vector in vectors]
-        Y = [concept for concept, vectors in self.dataset.items() for vector in vectors]
-        entities = [entity for concept, entities in self.entities_dataset.items() for entity in entities]
+#         X = [vector for concept, vectors in self.dataset.items() for vector in vectors]
+#         Y = [concept for concept, vectors in self.dataset.items() for vector in vectors]
+#         entities = [entity for concept, entities in self.entities_dataset.items() for entity in entities]
 
-        return X, Y, entities
+#         return X, Y, entities
 
-    def create_datasets(self):
-        '''
-        create the dataset which will be used in all the pipeline
-        '''
-        self.multilabel_dataset = defaultdict(list)
-        self.multilabel_entities_dataset = defaultdict(list)
+#     def create_datasets(self):
+#         '''
+#         create the dataset which will be used in all the pipeline
+#         '''
+#         self.multilabel_dataset = defaultdict(list)
+#         self.multilabel_entities_dataset = defaultdict(list)
 
-        self.dataset = defaultdict(list)
-        self.entities_dataset = defaultdict(list)
+#         self.dataset = defaultdict(list)
+#         self.entities_dataset = defaultdict(list)
 
 
-        pattern = r'_[a-z]+'
+#         pattern = r'_[a-z]+'
         
-        all_count = Counter(self.entities)
+#         all_count = Counter(self.entities)
 
-        all_entities_without_labels = [re.sub(pattern, '', e) for e in set(self.entities)]
+#         all_entities_without_labels = [re.sub(pattern, '', e) for e in set(self.entities)]
 
-        single_count = Counter(all_entities_without_labels)
+#         single_count = Counter(all_entities_without_labels)
 
-        for x, y, e in zip(self.X, self.Y, self.entities):
-            cleaned_entity = re.sub(pattern, '', e)
-            if single_count[cleaned_entity] == all_count[e]:
-                self.dataset[y].append(x)
-                self.entities_dataset[y].append(e) 
-            else:
-                self.multilabel_dataset[y].append(x)
-                self.multilabel_entities_dataset[y].append(e)
+#         for x, y, e in zip(self.X, self.Y, self.entities):
+#             cleaned_entity = re.sub(pattern, '', e)
+#             if single_count[cleaned_entity] == all_count[e]:
+#                 self.dataset[y].append(x)
+#                 self.entities_dataset[y].append(e) 
+#             else:
+#                 self.multilabel_dataset[y].append(x)
+#                 self.multilabel_entities_dataset[y].append(e)
             
         
-        self.dataset = {k:values for k, values in self.dataset.items() if len(values) > 1}
-        self.entities_dataset = {k:entities for k, entities in self.entities_dataset.items() if len(entities) > 1}
+#         self.dataset = {k:values for k, values in self.dataset.items() if len(values) > 1}
+#         self.entities_dataset = {k:entities for k, entities in self.entities_dataset.items() if len(entities) > 1}
 
-        self.multilabel_dataset = {k:values for k, values in self.single_label_dataset.items() if len(values) > 1}
-        self.multilabel_entities_dataset = {k:entities for k, entities in self.single_label_entities_dataset.items() if len(entities) > 1}
+#         self.multilabel_dataset = {k:values for k, values in self.single_label_dataset.items() if len(values) > 1}
+#         self.multilabel_entities_dataset = {k:entities for k, entities in self.single_label_entities_dataset.items() if len(entities) > 1}
 
-    def multilabel_quantile_filter(self, threshold, quantile, filtering_threshold, sub = 10):
-        out_words = defaultdict(list)
-        for concept, vectors in self.multilabel_dataset.items():
-            entities = self.multilabel_entities_dataset[concept]
+#     def multilabel_quantile_filter(self, threshold, quantile, filtering_threshold, sub = 10):
+#         out_words = defaultdict(list)
+#         for concept, vectors in self.multilabel_dataset.items():
+#             entities = self.multilabel_entities_dataset[concept]
 
-            similarities = np.mean(self.cluster_distance(vectors, random.sample(self.filtered_dataset[y], self.cluster_sizes[y])), axis=1)
+#             similarities = np.mean(self.cluster_distance(vectors, random.sample(self.filtered_dataset[y], self.cluster_sizes[y])), axis=1)
 
-            couples = sorted([(x, s, e) for x, s in zip(vectors, similarities, entities)], key=lambda x: x[1], reverse=True)
+#             couples = sorted([(x, s, e) for x, s in zip(vectors, similarities, entities)], key=lambda x: x[1], reverse=True)
 
-            for i in range(len(couples), sub):
-                batch = [x[0] for x in couples[i : i + sub]]
-                entities_batch = [x[2] for x in couples[i : i + sub]]
+#             for i in range(len(couples), sub):
+#                 batch = [x[0] for x in couples[i : i + sub]]
+#                 entities_batch = [x[2] for x in couples[i : i + sub]]
                 
-                new_cluster = []
-                new_cluster.extend(filtered_dataset[y])
-                new_cluster.extend(batch)
+#                 new_cluster = []
+#                 new_cluster.extend(filtered_dataset[y])
+#                 new_cluster.extend(batch)
 
-                cohesion = np.sum(np.tril(self.cluster_distance(new_cluster), -1))/sum([I + 1 for I in range(len(new_cluster) - 1)])
+#                 cohesion = np.sum(np.tril(self.cluster_distance(new_cluster), -1))/sum([I + 1 for I in range(len(new_cluster) - 1)])
 
-                if cohesion > threshold:
-                    self.filtered_dataset[y] = new_cluster
-                    self.filtered_entities_dataset[y].extend
-                else:
-                    out_words[y] = list(set([x[2] for x in couples[i:]]))
-                    break
-        return self.filtered_dataset, self.filtered_entities_dataset, out_words
+#                 if cohesion > threshold:
+#                     self.filtered_dataset[y] = new_cluster
+#                     self.filtered_entities_dataset[y].extend
+#                 else:
+#                     out_words[y] = list(set([x[2] for x in couples[i:]]))
+#                     break
+#         return self.filtered_dataset, self.filtered_entities_dataset, out_words

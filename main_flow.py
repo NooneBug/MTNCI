@@ -11,14 +11,29 @@ import time
 from sklearn.metrics.pairwise import cosine_similarity
 
 multilabel = False
-load_dataset = False
-filter_dataset = True
-threshold = 0.5
-distance = euclidean_similarity
+load_dataset = True
+filter_dataset = False
+threshold = 0.1
+distance = cosine_similarity
 normalize = True
-tensorboard_run_ID = '1_strange_{}_nickel'.format(threshold)
-# tensorboard_run_ID = '1_16_3_multilabel_filtered_{}'.format(threshold)
+exclude_min_threshold = 20
+
+# NAME = '8_regularized'
+NAME = '4_fair_sampled'
+
+tensorboard_run_ID = NAME
+results_path = 'results/excel_results/' + NAME + '.txt'
+TSV_path = 'results/excel_results/export_' + NAME + '.txt'
+
 nickel = True
+lr = 1e-3
+regularized = False
+regul_dict = {'negative_sampling': 0, 'mse': 50, 'distance_power':1}
+
+llambda = 0.1
+weighted = True
+epochs = 50
+
 FILE_ID = '16_3'
 
 
@@ -51,7 +66,8 @@ else:
     ENTITIES_PATH = DATASET_PATH + FILE_ID + 'entities_multilabel'
     
 
-FILTERED_DATASET_PATH = '../source_files/vectors/' + FILE_ID + '/' 
+FILTERED_DATASET_PATH = '/home/vmanuel/Notebooks/pytorch/source_files/vectors/' + FILE_ID + '/fair/'  
+# FILTERED_DATASET_PATH = '/home/vmanuel/Notebooks/pytorch/source_files/vectors/' + FILE_ID + '/_' + str(exclude_min_threshold) + '/'  
 
 X_TRAIN_PATH = FILTERED_DATASET_PATH + 'filtered_X_train'
 X_VAL_PATH = FILTERED_DATASET_PATH + 'filtered_X_val' 
@@ -76,7 +92,7 @@ if __name__ == "__main__":
 
     datasetManager.load_concept_embeddings(CONCEPT_EMBEDDING_PATHS = CONCEPT_EMBEDDING_PATHS, nickel = nickel)
 
-    if not load_dataset:
+    if not load_dataset and filter_dataset:
     # create dataset
         datasetManager.load_entities_data(X_PATH = X_PATH,
                                         Y_PATH = Y_PATH,
@@ -97,24 +113,41 @@ if __name__ == "__main__":
                                         filtered_dataset_path = SOURCE_FILES_PATH + 'vectors/{}filtered/'.format(FILE_ID),
                                         threshold=threshold,
                                         cluster_distance = distance)
-            datasetManager.filter()
+            # datasetManager.filter()
         
-        fraction = 1
+
+        print('... saving dataset ...')
+        datasetManager.save_raw_dataset(save_path = FILTERED_DATASET_PATH + '0.6_3_aprile/')
+
+        fraction = 0.1
 
         datasetManager.shuffle_dataset_and_sample(fraction = fraction, in_place = True)
 
-        datasetManager.split_data_by_unique_entities(exclude_min_threshold=10)
+        datasetManager.split_data_by_unique_entities(exclude_min_threshold=exclude_min_threshold)
         print('Train: {} vectors, Val: {} vectors, Test: {} vectors'.format(len(datasetManager.Y_train),
                                                                             len(datasetManager.Y_val),
                                                                             len(datasetManager.Y_test)
                                                                             )
                 )
 
+        datasetManager.save_datasets(save_path = FILTERED_DATASET_PATH)
+    
+    elif load_dataset and filter_dataset:
+        print('... loading filtered datasets ...')
+        datasetManager.load_raw_dataset(FILTERED_DATASET_PATH + '0.6_3_aprile/')
 
-        # print('... saving dataset ...')
-        # datasetManager.save_datasets(save_path = FILTERED_DATASET_PATH)
+        fraction = 1
 
-    else:
+        datasetManager.shuffle_dataset_and_sample(fraction = fraction, in_place = True)
+
+        datasetManager.split_data_by_unique_entities(exclude_min_threshold=exclude_min_threshold)
+        print('Train: {} vectors, Val: {} vectors, Test: {} vectors'.format(len(datasetManager.Y_train),
+                                                                            len(datasetManager.Y_val),
+                                                                            len(datasetManager.Y_test)
+                                                                            )
+            )
+
+    elif load_dataset:
         print('... loading datasets ...')
         t = time.time()
         datasetManager.X_train = load_data_with_pickle(X_TRAIN_PATH)
@@ -145,6 +178,8 @@ if __name__ == "__main__":
     model = MTNCI(input_d=len(datasetManager.X_train[0]),
                     out_spec = out_spec,
                     dims = [512, 512])
+    
+    model.set_results_paths(results_path = results_path, TSV_path = TSV_path)
 
     model.set_checkpoint_path(checkpoint_path = '../source_files/checkpoints/{}'.format(tensorboard_run_ID))
 
@@ -153,24 +188,21 @@ if __name__ == "__main__":
     model.initialize_tensorboard_manager(tensorboard_run_ID)
 
     model.set_device(device)
-    lr = 1e-3
     
     model.set_optimizer(optimizer = RiemannianAdam(model.parameters(), lr = lr))
-
-    llambda = 0.1
-    weighted = True
-    epochs = 100
 
     model.set_lambda(llambdas = {'hyperbolic' : 1 - llambda,
                                  'distributional': llambda})
     
+    model.set_hyperparameters(epochs = epochs, weighted=weighted, regularized = regularized)
 
+    if regularized:
+        model.set_regularization_params(regul_dict)
 
-    model.set_hyperparameters(epochs = epochs, weighted=weighted)
     print('... training model ... ')
     model.train_model()
 
-    topn = [1, 2, 5]
+    topn = [1]
     model.type_prediction_on_test(topn=topn)
 
     

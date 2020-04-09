@@ -20,6 +20,8 @@ from Filters import Filter, FilterOnClassCohesion
 from preprocessing.utils import load_data_with_pickle, save_data_with_pickle
 from preprocessing.CorpusManager import CorpusManager
 from torch.utils.data import Dataset, DataLoader
+import os
+
 
 class MTNCIDataset(Dataset):
 
@@ -158,7 +160,7 @@ class DatasetManager():
         self.print_loaded()
     
     def load_nickel(self, path):
-        emb = torch.load('../source_files/embeddings/16_3_nickel.pth')
+        emb = torch.load('/home/vmanuel/Notebooks/pytorch/source_files/embeddings/16_3_nickel.pth')
 
         embeddings = emb['embeddings']
         objects = emb['objects']
@@ -300,6 +302,20 @@ class DatasetManager():
         else:
             return [x[0] for i, x in enumerate(A) if i < frac], [x[1] for i, x in enumerate(A) if i < frac], [x[2] for i, x in enumerate(A) if i < frac]
 
+
+    def save_raw_dataset(self, save_path):
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+
+        save_data_with_pickle(save_path + 'X', self.X)
+        save_data_with_pickle(save_path + 'Y', self.Y)
+        save_data_with_pickle(save_path + 'entities', self.entities)
+
+    def load_raw_dataset(self, load_path):
+        self.X = load_data_with_pickle(load_path + 'X')
+        self.Y = load_data_with_pickle(load_path + 'Y')
+        self.entities = load_data_with_pickle(load_path + 'entities')
+
     def save_datasets(self, save_path):
         '''
         saves datasets in the save_path
@@ -307,6 +323,11 @@ class DatasetManager():
         params:
             save_path: the path in which save datasets
         '''
+
+        print(save_path)
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+            
         save_data_with_pickle(save_path + 'filtered_X_train', self.X_train)
         save_data_with_pickle(save_path + 'filtered_X_val', self.X_val)
         save_data_with_pickle(save_path + 'filtered_X_test', self.X_test)
@@ -506,7 +527,6 @@ class DatasetManager():
         normalize the input vectors 
         '''
         print('... normalization ...')
-        self.X = normalize(self.X, axis = 0)
         self.X = normalize(self.X, axis = 1)
 
 
@@ -562,7 +582,6 @@ class ShimaokaMTNCIDatasetManager(DatasetManager):
         self.train_batched_labels = self.batch_labels(train)
         self.val_batched_labels = self.batch_labels(val)
         self.train_batched_labels = self.batch_labels(test)
-
 
         self.create_numeric_dataset()
 

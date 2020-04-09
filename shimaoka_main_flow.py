@@ -18,18 +18,34 @@ class argClass():
         self.mention_dropout = 0.5
         self.context_dropout = 0.5
 
-lopez_data = torch.load('../figet-hyperbolic-space/data/prep/MTNCI/data.pt')
+lopez_data = torch.load('../figet-hyperbolic-space/data/prep/MTNCI-fair/data.pt')
+word2vec = torch.load('../figet-hyperbolic-space/data/prep/MTNCI-fair/word2vec.pt')
+
 
 args = {'emb_size': 300, 'char_emb_size': 50, 'positional_emb_size': 25, 'context_rnn_size':200,
-        'attn_size': 100, 'mention_dropout' : 0.5, 'context_dropout': 0.5}
+        'attn_size': 100, 'mention_dropout' : 0.5, 'context_dropout': 0.2}
 args = argClass(args)
 vocabs = lopez_data['vocabs']
 SHIMAOKA_OUT = args.context_rnn_size * 2 + args.emb_size + args.char_emb_size
 out_spec = [{'manifold':'euclid', 'dim':[64, 10]},
             {'manifold':'poincare', 'dim':[128, 128, 10]}]
 
+NAME = '3_shimaoka_MTNCI_fair_sampled_cosine_50'
+
+regularized = True
+regul_dict = {'negative_sampling': 0, 'mse': 50, 'distance_power':1}
+
+
+tensorboard_run_ID = NAME
+results_path = 'results/excel_results/' + NAME + '.txt'
+TSV_path = 'results/excel_results/export_' + NAME + '.txt'
+
+llambda = 0.1
+weighted = True
+epochs = 50
+
 nickel = True
-tensorboard_run_ID = '1_shimaoka_nickel'
+# tensorboard_run_ID = '1_shimaoka_hinge_nickel'
 
 FILE_ID = '16_3'
 
@@ -70,7 +86,14 @@ if __name__ == "__main__":
     train_labels = [lopez_data['vocabs']['type'].idx2label[label.item()] for entry in train for labels in entry[5] for label in labels]
     val_labels = [lopez_data['vocabs']['type'].idx2label[label.item()] for entry in val for labels in entry[5] for label in labels]
     test_labels = [lopez_data['vocabs']['type'].idx2label[label.item()] for entry in test for labels in entry[5] for label in labels]
-    test_entities = [lopez_data['vocabs']['token'].idx2label[entity.item()] for entry in test for entities in entry[5] for entity in entities]
+    test_entities = []
+    for entry in test: 
+        for entities in entry[3]:
+            entity_label = ''
+            for entity in entities:
+                if entity.item() != 0:
+                    entity_label += lopez_data['vocabs']['token'].idx2label[entity.item()] + ' '
+            test_entities.append(entity_label)
 
     datasetManager = DatasetManager(FILE_ID)
     datasetManager.set_device(device)
@@ -86,6 +109,8 @@ if __name__ == "__main__":
                     input_d=SHIMAOKA_OUT,
                     out_spec = out_spec,
                     dims = [512, 512])
+    
+    model.init_params(word2vec=word2vec)
 
     model.set_dataset_manager(datasetManager)
     
@@ -98,18 +123,23 @@ if __name__ == "__main__":
     
     model.set_optimizer(optimizer = RiemannianAdam(model.parameters(), lr = lr))
 
-    llambda = 0.1
-    weighted = True
-    epochs = 100
+    
 
     model.set_lambda(llambdas = {'hyperbolic' : 1 - llambda,
                                  'distributional': llambda})
     
 
-    model.set_hyperparameters(epochs = epochs, weighted=weighted)
+    model.set_results_paths(results_path = results_path, TSV_path = TSV_path)
+
+
+    model.set_hyperparameters(epochs = epochs, weighted=weighted, regularized=regularized)
+    
+    if regularized:
+        model.set_regularization_params(regul_dict)
+
     print('... training model ... ')
     model.train_model()
 
-    topn = [1, 2, 5]
+    topn = [1]
 
     model.type_prediction_on_test(topn, test_data, test_entities, test_labels)

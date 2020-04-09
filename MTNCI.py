@@ -34,6 +34,11 @@ class CommonLayer(nn.Module):
         
         self.dropout = nn.Dropout(p=dropout_prob).cuda()
         self.leaky_relu = nn.LeakyReLU(0.1).cuda()
+
+        for layer in self.fully:
+            nn.init.xavier_normal_(layer.weight)
+            if layer.bias is not None:
+                nn.init.zeros_(layer.bias)
         
     def forward(self, x):
         for i in range(len(self.fully)):
@@ -46,7 +51,7 @@ class RegressionOutput(nn.Module):
         super().__init__()
         self.out = nn.ModuleList()
         
-        self.dropout = nn.Dropout(p=0.1).cuda()
+        self.dropout = nn.Dropout(p=0.2).cuda()
         self.leaky_relu = nn.ReLU().cuda()
         self.bns = nn.ModuleList()
         
@@ -65,6 +70,7 @@ class RegressionOutput(nn.Module):
             
     def forward(self, x):
         for i in range(len(self.out) - 1):
+            # x = self.dropout(self.leaky_relu(self.out[i](x)))
             x = self.leaky_relu(self.out[i](x))
         out = self.out[-1](x)
         return out
@@ -120,12 +126,22 @@ class MTNCI(nn.Module):
         for k in prediction_dict.keys():
             loss += torch.sum(prediction_dict[k] * self.llambdas[k])
         return loss
+
+    def get_multitask_loss_vector(self, prediction_dict):
+        loss = 0
+        for k in prediction_dict.keys():
+            loss += prediction_dict[k] * self.llambdas[k]
+        return loss
     
-    def set_hyperparameters(self, epochs, weighted = False):
+    def set_hyperparameters(self, epochs, weighted = False, regularized = False):
         self.epochs = epochs
         self.weighted = weighted
+        self.regularized = regularized
         if self.weighted:
             self.datasetManager.compute_weights()
+
+    def set_regularization_params(self, regul_dict):
+        self.regul_dict = regul_dict
 
     def get_prediction_manager(self, loss_name):
         manager = Prediction(device = self.device, weighted=self.weighted)
@@ -143,9 +159,23 @@ class MTNCI(nn.Module):
         distributional_prediction_train_manager = self.get_prediction_manager(loss_name=losses['cosine_dissimilarity'])
         distributional_prediction_val_manager = self.get_prediction_manager(loss_name=losses['cosine_dissimilarity'])
 
-        hyperbolic_prediction_train_manager = self.get_prediction_manager(loss_name=losses['hyperbolic_distance'])
-        hyperbolic_prediction_val_manager = self.get_prediction_manager(loss_name=losses['hyperbolic_distance'])
+        if self.regularized:
+            print('in regularized')
+            hyperbolic_prediction_train_manager = self.get_prediction_manager(loss_name=losses['regularized_hyperbolic_distance'])
+            print('prediction_manager_getted')
+            hyperbolic_prediction_train_manager.set_regularization_params(self.regul_dict)
+            print('regul_setted')
+        else:
+            hyperbolic_prediction_train_manager = self.get_prediction_manager(loss_name=losses['hyperbolic_distance'])
         
+        hyperbolic_prediction_val_manager = self.get_prediction_manager(loss_name=losses['hyperbolic_distance'])
+
+        hyperbolic_train_metric_manager = self.get_prediction_manager(loss_name=losses['hyperbolic_distance'])
+        distributional_train_metric_manager = self.get_prediction_manager(loss_name=losses['cosine_dissimilarity'])
+        
+        hyperbolic_val_metric_manager = self.get_prediction_manager(loss_name=losses['hyperbolic_distance'])
+        distributional_val_metric_manager = self.get_prediction_manager(loss_name=losses['cosine_dissimilarity'])
+
         if self.weighted:
 
             train_weights = self.datasetManager.get_weights(label = 'Train')
@@ -153,10 +183,15 @@ class MTNCI(nn.Module):
 
             distributional_prediction_train_manager.set_weight(train_weights)
             hyperbolic_prediction_train_manager.set_weight(train_weights)
-            
+
             distributional_prediction_val_manager.set_weight(val_weights)
             hyperbolic_prediction_val_manager.set_weight(val_weights)
 
+            hyperbolic_train_metric_manager.set_weight(train_weights)
+            distributional_train_metric_manager.set_weight(train_weights)
+
+            hyperbolic_val_metric_manager.set_weight(val_weights)
+            distributional_val_metric_manager.set_weight(val_weights)
 
         for epoch in range(self.epochs):
             train_it = iter(self.datasetManager.trainloader)
@@ -170,6 +205,12 @@ class MTNCI(nn.Module):
             
             hyperbolic_train_loss_SUM = 0
             hyperbolic_val_loss_SUM = 0
+
+            distributional_train_metric_SUM = 0
+            hyperbolic_train_metric_SUM = 0
+            
+            distributional_val_metric_SUM = 0
+            hyperbolic_val_metric_SUM = 0
             
             train_weights_sum = 0
             val_weights_sum = 0
@@ -194,16 +235,30 @@ class MTNCI(nn.Module):
 
                 hyperbolic_prediction_train_manager.set_prediction(predictions = output[1], 
                                                              true_values = targets['hyperbolic'],
+                                                             labels = labels) 
+
+                distributional_train_metric_manager.set_prediction(predictions = output[0],
+                                                                                true_values = targets['distributional'], 
+                                                                                labels = labels)
+
+                hyperbolic_train_metric_manager.set_prediction(predictions = output[1], 
+                                                             true_values = targets['hyperbolic'],
                                                              labels = labels)                
 
 
                 distributional_train_loss = distributional_prediction_train_manager.compute_loss()
                 
                 hyperbolic_train_loss = hyperbolic_prediction_train_manager.compute_loss()
-
+                
                 distributional_train_loss_SUM += torch.sum(distributional_train_loss * self.llambdas['distributional']).item()
                 hyperbolic_train_loss_SUM += torch.sum(hyperbolic_train_loss * (self.llambdas['hyperbolic'])).item()
                 
+                distributional_train_metric = distributional_train_metric_manager.compute_loss()
+                hyperbolic_train_metric = hyperbolic_train_metric_manager.compute_loss()
+
+                distributional_train_metric_SUM += torch.sum(distributional_train_metric).item()
+                hyperbolic_train_metric_SUM += torch.sum(hyperbolic_train_metric).item()
+
                 train_loss = self.get_multitask_loss({'distributional': distributional_train_loss, 
                                                       'hyperbolic': hyperbolic_train_loss})
                 
@@ -238,13 +293,27 @@ class MTNCI(nn.Module):
                                                                     true_values = targets['hyperbolic'],
                                                                     labels = labels) 
                         
+                        distributional_val_metric_manager.set_prediction(predictions = output[0],
+                                                                                true_values = targets['distributional'], 
+                                                                                labels = labels)
+
+                        hyperbolic_val_metric_manager.set_prediction(predictions = output[1], 
+                                                                         true_values = targets['hyperbolic'],
+                                                                         labels = labels)                
+
+
                         distributional_val_loss = distributional_prediction_val_manager.compute_loss()
-                        
                         hyperbolic_val_loss = hyperbolic_prediction_val_manager.compute_loss()
                         
                         distributional_val_loss_SUM += torch.sum(distributional_val_loss * self.llambdas['distributional']).item()
                         hyperbolic_val_loss_SUM += torch.sum(hyperbolic_val_loss * (self.llambdas['hyperbolic'])).item()
                         
+                        distributional_val_metric = distributional_val_metric_manager.compute_loss()
+                        hyperbolic_val_metric = hyperbolic_val_metric_manager.compute_loss()
+
+                        distributional_val_metric_SUM += torch.sum(distributional_val_metric).item()
+                        hyperbolic_val_metric_SUM += torch.sum(hyperbolic_val_metric).item()
+
                         val_loss = self.get_multitask_loss({'distributional': distributional_val_loss, 
                                                             'hyperbolic': hyperbolic_val_loss})
                         
@@ -264,6 +333,12 @@ class MTNCI(nn.Module):
                 distributional_train_loss_value = distributional_train_loss_SUM/train_length
                 distributional_val_loss_value = distributional_val_loss_SUM/val_length
 
+                distributional_train_metric_value = distributional_train_metric_SUM/train_length
+                hyperbolic_train_metric_value = hyperbolic_train_metric_SUM/train_length
+
+                distributional_val_metric_value = distributional_val_metric_SUM/val_length
+                hyperbolic_val_metric_value = hyperbolic_val_metric_SUM/val_length
+
             else:
                 train_loss_value = train_loss_SUM/train_weights_sum
                 val_loss_value = val_loss_SUM/val_weights_sum
@@ -273,6 +348,12 @@ class MTNCI(nn.Module):
 
                 distributional_train_loss_value = distributional_train_loss_SUM/train_weights_sum
                 distributional_val_loss_value = distributional_val_loss_SUM/val_weights_sum
+
+                distributional_train_metric_value = distributional_train_metric_SUM/train_weights_sum
+                hyperbolic_train_metric_value = hyperbolic_train_metric_SUM/train_weights_sum
+
+                distributional_val_metric_value = distributional_val_metric_SUM/val_weights_sum
+                hyperbolic_val_metric_value = hyperbolic_val_metric_SUM/val_weights_sum
                 
 
             losses_dict = {'Losses/Hyperbolic Losses': {'Train': hyperbolic_train_loss_value, 
@@ -286,13 +367,19 @@ class MTNCI(nn.Module):
 
             self.checkpointManager(val_loss_value)
 
+            metric_dict = {'Metrics/Hyperbolic Metrics': {'Train': hyperbolic_train_metric_value, 
+                                                 'Val': hyperbolic_val_metric_value},
+                           'Metrics/Distributional Metrics':  {'Train': distributional_train_metric_value,
+                                                                'Val': distributional_val_metric_value},
+                            }
             self.log_losses(losses_dict = losses_dict, epoch = epoch + 1)
 
-            print('{:^15}'.format('epoch {:^3}/{:^3}'.format(epoch, self.epochs)))
-            print('{:^15}'.format('Train loss: {:.4f}, Val loss: {:.4f}'.format(train_loss_value, val_loss_value)
-                                                                            
-                                )
-                )
+            self.log_losses(losses_dict=metric_dict, epoch = epoch + 1)
+
+            print('{:^25}'.format('epoch {:^3}/{:^3}'.format(epoch + 1, self.epochs)))
+            print('{:^25}'.format('Train loss: {:.4f}, Val loss: {:.4f}'.format(train_loss_value, val_loss_value)))
+            print('{:^25}'.format('T_MHD: {:.4f}, V_MHD:{:.4f}'.format(hyperbolic_train_metric_value, hyperbolic_val_metric_value)))
+            print('{:^25}'.format('T_MDD: {:.4f}, V_MDD:{:.4f}'.format(distributional_train_metric_value, distributional_val_metric_value)))
 
     def checkpointManager(self, val_loss_value):
         try:
@@ -328,26 +415,34 @@ class MTNCI(nn.Module):
         checkpoint = torch.load(self.checkpoint_path)
 
         self.load_state_dict(checkpoint['model_state_dict'])
+        
+        self.eval()
+        
         test_predictions = self(torch.tensor(self.datasetManager.X_test, device=self.device))
         labels = self.datasetManager.Y_test
         entities = self.datasetManager.E_test
 
+        if self.device == torch.device("cuda"): 
+            test_predictions[0] = test_predictions[0].detach().cpu().numpy()   
+            test_predictions[1] = test_predictions[1].detach().cpu().numpy()   
+        else:
+            test_predictions[0] = test_predictions[0].numpy()
+            test_predictions[1] = test_predictions[1].numpy()
+
         return self.compute_prediction(test_predictions, labels, entities)
 
-
     def compute_prediction(self, test_predictions, labels, entities):
+        
+        self.tsv = {'distributional':{'recalls': [],
+                                'precisions': [],
+                                'fmeasures': []},
+                    'hyperbolic': {'recalls': [],
+                                'precisions': [],
+                                'fmeasures': []}
+                    }
 
         for space, preds in zip(['distributional', 'hyperbolic'], test_predictions):
-            
-            self.eval()
-
             print(' ...evaluating test predictions in {} space... '.format(space))
-
-            # if self.device == torch.device("cuda"): 
-            #     preds = preds.detach().cpu().numpy()   
-            # else:
-            #     preds = preds.numpy()
-
             self.emb = Embedding()            
             self.emb.set_embedding(self.datasetManager.concept_embeddings[space])
             self.emb.set_name(space)
@@ -362,36 +457,44 @@ class MTNCI(nn.Module):
             print('occurrence {}'.format(space))
             recalls, precisions, fmeasures = self.occurrence_level_prediction(predictions = preds, 
                                                                                 labels = labels)
+            
+            self.fill_TSV(space = space, precisions=precisions, recalls=recalls, fmeasures=fmeasures)
             self.save_results(recalls = recalls, 
                                 precisions = precisions, 
                                 fmeasures = fmeasures, 
                                 level_name = 'Occurrence Level in {} space'.format(space))
+
             print('entity {}'.format(space))
             recalls, precisions, fmeasures = self.entity_level_prediction(predictions = preds, 
                                                                             labels = labels, 
                                                                             entities = entities)
             
+            self.fill_TSV(space = space, precisions=precisions, recalls=recalls, fmeasures=fmeasures)
             self.save_results(recalls = recalls, 
                                 precisions = precisions, 
                                 fmeasures = fmeasures, 
                                 level_name = 'Entity Level in {} space'.format(space))
+            
             print('concept1 {}'.format(space))
             recalls, precisions, fmeasures = self.concept_level_prediction(predictions = preds,
                                                                                 labels = labels)
-
+            
+            self.fill_TSV(space = space, precisions=precisions, recalls=recalls, fmeasures=fmeasures)
             self.save_results(recalls = recalls, 
                                 precisions = precisions, 
                                 fmeasures = fmeasures, 
                                 level_name = 'Concept Level (induce from occurrencies) in {} space'.format(space))
+            
             print('concept2 {}'.format(space))
             recalls, precisions, fmeasures = self.concept_level_prediction(predictions = preds,
                                                                                 labels = labels,
                                                                                 entities = entities)
-
+            self.fill_TSV(space = space, precisions=precisions, recalls=recalls, fmeasures=fmeasures)
             self.save_results(recalls = recalls, 
                                 precisions = precisions, 
                                 fmeasures = fmeasures,  
                                 level_name = 'Concept Level (induce from entities) in {} space'.format(space))
+            self.save_TSV(space = space)
 
     def compute_metrics(self, total, concept_accuracies, elements_number_for_concept, predictions, labels):
         precision_at_n = {t: 0 for t in self.topn}
@@ -402,7 +505,11 @@ class MTNCI(nn.Module):
         correct_prediction = defaultdict(int)
         corrects_n = {t: 0 for t in self.topn}
 
+        bar = tqdm(total=len(predictions))
+        i = 0
         for pred, label in zip(predictions, labels):
+            i += 1
+            bar.set_description('getting results for prediction {}'.format(i))
             neigh = self.emb.get_neigh(vector = pred, top = max(self.topn))
 
             for t in self.topn:
@@ -415,7 +522,8 @@ class MTNCI(nn.Module):
                     concept_predicted[new_neigh[0]] += 1
                     if label in new_neigh:
                         correct_prediction[new_neigh[0]] += 1
-
+            bar.update(1)
+        bar.close()
         micro_average_recall, macro_average_recall = {}, {}
 
         for t in self.topn:
@@ -475,7 +583,7 @@ class MTNCI(nn.Module):
         corrects_n = 0
         total_n = len(set(entities))
         concept_accuracies =  {t: {s:0 for s in set(labels)} for t in self.topn}
-        concept_number = {s:len([e for e in labels if e == s]) for s in set(labels)}
+        concept_number = {s:len([e for e, l in entities_labels.items() if l == s]) for s in set(labels)}
 
         entity_predictions_list = list(entities_predictions.values())
         entity_labels_list = [entities_labels[e] for e in entities_predictions.keys()]   
@@ -524,20 +632,49 @@ class MTNCI(nn.Module):
         return {e: self.emb.get_centroid(v) for e, v in clusters_dict.items()}
 
 
+    def set_results_paths(self, results_path, TSV_path):
+        self.results_path = results_path
+        self.TSV_path = TSV_path
+
+    def fill_TSV(self, space, precisions, recalls, fmeasures):
+        self.tsv[space]['recalls'].append(recalls['micro'][1])
+        self.tsv[space]['recalls'].append(recalls['macro'][1])
+        self.tsv[space]['precisions'].append(precisions['micro'][1])
+        self.tsv[space]['precisions'].append(precisions['macro'][1])
+        self.tsv[space]['fmeasures'].append(fmeasures['micro'][1])
+        self.tsv[space]['fmeasures'].append(fmeasures['macro'][1])
+
+    def save_TSV(self, space):
+        if space == 'distributional':
+            out = open(self.TSV_path, 'w')
+        else:
+            out = open(self.TSV_path, 'a')
+        
+        output = ''
+        if space == 'hyperbolic':
+            output += 'Hyperbolic\t\t\t\t\t\t\t\n'
+            output += 'Micro\tMacro\tMicro\tMacro\tMicro\tMacro\tMicro\tMacro\n'
+        for measure in ['precisions', 'recalls', 'fmeasures']:
+            output += '\t'.join(['{:.4f}'.format(m) for m in self.tsv[space][measure]]) + '\n'
+        out.write(output)        
+
+
     def save_results(self, precisions, recalls, fmeasures, level_name):
-        with open('results/results.txt', 'a') as out:
+        with open(self.results_path, 'a') as out:
             for t in self.topn:
                 out.write('------------------------ topn: {}--------------------------\n'.format(t))
                 out.write('\n{} results: \n'.format(level_name))
-                
-                out.write('\t micro average recall: {:.4f}\n'.format(recalls['micro'][t]))
-                out.write('\t macro average recall: {:.4f}\n'.format(recalls['macro'][t]))
-
                 if t == 1:
                     out.write('\t micro average precision: {:.4f}\n'.format(precisions['micro'][t]))
+                
+                out.write('\t micro average recall: {:.4f}\n'.format(recalls['micro'][t]))
+
+                if t == 1:
+                    out.write('\t micro average fmeasure: {:.4f}\n'.format(fmeasures['micro'][t]))
                     out.write('\t macro average precision: {:.4f}\n'.format(precisions['macro'][t]))
 
-                    out.write('\t micro average fmeasure: {:.4f}\n'.format(fmeasures['micro'][t]))
+                out.write('\t macro average recall: {:.4f}\n'.format(recalls['macro'][t]))
+                if t == 1:
                     out.write('\t macro average fmeasure: {:.4f}\n'.format(fmeasures['macro'][t]))
                 
                 out.write('Metrics for each concept:\n')
@@ -551,6 +688,8 @@ class MTNCI(nn.Module):
                                                                     '#', 
                                                                     'predictions (for precision)'))
                 
+                bar = tqdm(total=len(keys))
+                bar.set_description('Writing results for {}, top {}'.format(level_name, t))
                 for k in keys:
                     if t == 1:
                         out.write('\t{:35}: {:10.2f}, {:10.2f}, {:10.2f}, {:4}, {:4}\n'.format(k,
@@ -568,6 +707,11 @@ class MTNCI(nn.Module):
                                                                                 recalls['at'][t][k][1],
                                                                                 ' '
                                                                                 ))
+                    bar.update()
+                bar.close()
+
+    def set_regularization_params(self, regul_dict):
+        self.regul_dict = regul_dict
 
 
     def get_model(self):
@@ -608,6 +752,7 @@ class Embedding:
     def get_centroid(self, vectors):
         return self.centroid_method(vectors)
 
+    
 class Prediction:
 
     def __init__(self, device = None, weighted = False):
@@ -636,6 +781,10 @@ class Prediction:
             self.selected_loss = regularizedPoincareDistanceLoss(device = self.device)
         # elif loss_name == self.LOSSES['hyperboloid_distance']:
         #     self.selected_loss = lorentzDistanceLoss(device = self.device)
+
+    def set_regularization_params(self, regul_dict):
+        print('setting regul params for {}'.format(self.selected_loss))
+        self.selected_loss.set_regularization(regul_dict)
 
     def compute_loss(self):
         loss = self.selected_loss.compute_loss(true = self.true_values,
@@ -677,22 +826,30 @@ class poincareDistanceLoss(Loss):
         
         denom = left_denom * right_denom
 
-        frac = numerator/denom
+        frac = numerator/denom + 1
+
         acos = self.acosh(1  + frac)
         
         return acos
 
+
     def acosh(self, x):
         return torch.log(x + torch.sqrt(x**2-1))
 
-    def mse(self, y_pred, y_true):    
-        mse_loss = nn.MSELoss()
-        return mse_loss(y_pred, y_true)
 
 class regularizedPoincareDistanceLoss(poincareDistanceLoss):
 
     def set_regularization(self, regul):
         self.regul = regul
+        print('regul setted')
+
+    def mse(self, y_pred, y_true):    
+        mse_loss = nn.MSELoss()
+        return mse_loss(y_pred, y_true)
+
+    def cosine_loss(self, true, pred):
+        cossim = torch.nn.CosineSimilarity(dim = 1)
+        return 1 - cossim(true, pred)
 
     def compute_loss(self, true, pred):
         acos = super().compute_loss(true = true, pred = pred)
@@ -700,14 +857,14 @@ class regularizedPoincareDistanceLoss(poincareDistanceLoss):
         l0 = torch.tensor(1., device = self.device)
         l1 = torch.tensor(1., device = self.device)
         
-        if sum(self.regul) > 1:
+        if sum(self.regul.values()) > 1:
             
             true_perm = true[torch.randperm(true.size()[0])]
             
-            l0 = torch.abs(super().compute_loss(pred, true_perm) - super.compute_loss(true, true_perm))
-            l1 = self.mse(pred, true)
+            l0 = torch.abs(super().compute_loss(pred, true_perm) - super().compute_loss(true, true_perm))
+            l1 = self.cosine_loss(pred, true)
         
-        return acos**self.regul[2] + l0 * self.regul[0] + l1 * self.regul[1]
+        return acos**self.regul['distance_power'] + l0 * self.regul['negative_sampling'] + l1 * self.regul['mse']
 
 
 class ShimaokaMTNCI(MTNCI):
@@ -744,6 +901,7 @@ class ShimaokaMTNCI(MTNCI):
     
 
     def train_model(self):
+
         train_length = len(self.datasetManager.Y_train)
         val_length = len(self.datasetManager.Y_val)
 
@@ -752,9 +910,23 @@ class ShimaokaMTNCI(MTNCI):
         distributional_prediction_train_manager = self.get_prediction_manager(loss_name=losses['cosine_dissimilarity'])
         distributional_prediction_val_manager = self.get_prediction_manager(loss_name=losses['cosine_dissimilarity'])
 
-        hyperbolic_prediction_train_manager = self.get_prediction_manager(loss_name=losses['hyperbolic_distance'])
-        hyperbolic_prediction_val_manager = self.get_prediction_manager(loss_name=losses['hyperbolic_distance'])
+        if self.regularized:
+            print('in regularized')
+            hyperbolic_prediction_train_manager = self.get_prediction_manager(loss_name=losses['regularized_hyperbolic_distance'])
+            print('prediction_manager_getted')
+            hyperbolic_prediction_train_manager.set_regularization_params(self.regul_dict)
+            print('regul_setted')
+        else:
+            hyperbolic_prediction_train_manager = self.get_prediction_manager(loss_name=losses['hyperbolic_distance'])
         
+        hyperbolic_prediction_val_manager = self.get_prediction_manager(loss_name=losses['hyperbolic_distance'])
+
+        hyperbolic_train_metric_manager = self.get_prediction_manager(loss_name=losses['hyperbolic_distance'])
+        distributional_train_metric_manager = self.get_prediction_manager(loss_name=losses['cosine_dissimilarity'])
+        
+        hyperbolic_val_metric_manager = self.get_prediction_manager(loss_name=losses['hyperbolic_distance'])
+        distributional_val_metric_manager = self.get_prediction_manager(loss_name=losses['cosine_dissimilarity'])
+
         if self.weighted:
 
             train_weights = self.datasetManager.get_weights(label = 'Train')
@@ -766,6 +938,11 @@ class ShimaokaMTNCI(MTNCI):
             distributional_prediction_val_manager.set_weight(val_weights)
             hyperbolic_prediction_val_manager.set_weight(val_weights)
 
+            hyperbolic_train_metric_manager.set_weight(train_weights)
+            distributional_train_metric_manager.set_weight(train_weights)
+
+            hyperbolic_val_metric_manager.set_weight(val_weights)
+            distributional_val_metric_manager.set_weight(val_weights)
 
         for epoch in range(self.epochs):            
             train_loss_SUM = 0
@@ -779,6 +956,12 @@ class ShimaokaMTNCI(MTNCI):
             
             train_weights_sum = 0
             val_weights_sum = 0
+
+            distributional_train_metric_SUM = 0
+            hyperbolic_train_metric_SUM = 0
+            
+            distributional_val_metric_SUM = 0
+            hyperbolic_val_metric_SUM = 0
 
             bar = tqdm(total= len(self.datasetManager.train_batched_datas))
             bar.set_description("Training on train set")
@@ -807,6 +990,13 @@ class ShimaokaMTNCI(MTNCI):
                                                              true_values = targets['hyperbolic'],
                                                              labels = labels)                
 
+                distributional_train_metric_manager.set_prediction(predictions = output[0],
+                                                                                true_values = targets['distributional'], 
+                                                                                labels = labels)
+
+                hyperbolic_train_metric_manager.set_prediction(predictions = output[1], 
+                                                             true_values = targets['hyperbolic'],
+                                                             labels = labels)  
 
                 distributional_train_loss = distributional_prediction_train_manager.compute_loss()
                 
@@ -815,14 +1005,21 @@ class ShimaokaMTNCI(MTNCI):
                 distributional_train_loss_SUM += torch.sum(distributional_train_loss * self.llambdas['distributional']).item()
                 hyperbolic_train_loss_SUM += torch.sum(hyperbolic_train_loss * (self.llambdas['hyperbolic'])).item()
                 
+                distributional_train_metric = distributional_train_metric_manager.compute_loss()
+                hyperbolic_train_metric = hyperbolic_train_metric_manager.compute_loss()
+
+                distributional_train_metric_SUM += torch.sum(distributional_train_metric).item()
+                hyperbolic_train_metric_SUM += torch.sum(hyperbolic_train_metric).item()
+
+
                 train_loss = self.get_multitask_loss({'distributional': distributional_train_loss, 
                                                       'hyperbolic': hyperbolic_train_loss})
-                
-                train_loss_SUM += train_loss.item()
                 if self.weighted:
                     batch_weights = distributional_prediction_train_manager.get_batch_weights()
                     train_weights_sum += torch.sum(batch_weights)
 
+
+                train_loss_SUM += train_loss.item()
                 train_loss.backward()
                 self.optimizer.step()
 
@@ -833,7 +1030,7 @@ class ShimaokaMTNCI(MTNCI):
                 ######################
                 ######## VAL #########
                 ######################
-                
+                bar.close()
                 with torch.no_grad():
                     self.eval()   
                     
@@ -862,8 +1059,15 @@ class ShimaokaMTNCI(MTNCI):
                         distributional_val_loss_SUM += torch.sum(distributional_val_loss * self.llambdas['distributional']).item()
                         hyperbolic_val_loss_SUM += torch.sum(hyperbolic_val_loss * (self.llambdas['hyperbolic'])).item()
                         
+                        distributional_val_metric = distributional_val_metric_manager.compute_loss()
+                        hyperbolic_val_metric = hyperbolic_val_metric_manager.compute_loss()
+                        
+                        distributional_val_metric_SUM += torch.sum(distributional_val_metric).item()
+                        hyperbolic_val_metric_SUM += torch.sum(hyperbolic_val_metric).item()
+
+
                         val_loss = self.get_multitask_loss({'distributional': distributional_val_loss, 
-                                                            'hyperbolic': hyperbolic_val_loss})
+                                                                    'hyperbolic': hyperbolic_val_loss})
                         
                         val_loss_SUM += val_loss.item()
 
@@ -871,7 +1075,7 @@ class ShimaokaMTNCI(MTNCI):
                             batch_weights = distributional_prediction_val_manager.get_batch_weights()
                             val_weights_sum += torch.sum(batch_weights)
                         bar.update(1)
-            
+            bar.close()
             if not self.weighted:
                 train_loss_value = train_loss_SUM/train_length
                 val_loss_value = val_loss_SUM/val_length
@@ -881,6 +1085,13 @@ class ShimaokaMTNCI(MTNCI):
 
                 distributional_train_loss_value = distributional_train_loss_SUM/train_length
                 distributional_val_loss_value = distributional_val_loss_SUM/val_length
+
+                distributional_train_metric_value = distributional_train_metric_SUM/train_length
+                hyperbolic_train_metric_value = hyperbolic_train_metric_SUM/train_length
+
+                distributional_val_metric_value = distributional_val_metric_SUM/val_length
+                hyperbolic_val_metric_value = hyperbolic_val_metric_SUM/val_length
+                
 
             else:
                 train_loss_value = train_loss_SUM/train_weights_sum
@@ -892,6 +1103,11 @@ class ShimaokaMTNCI(MTNCI):
                 distributional_train_loss_value = distributional_train_loss_SUM/train_weights_sum
                 distributional_val_loss_value = distributional_val_loss_SUM/val_weights_sum
                 
+                distributional_train_metric_value = distributional_train_metric_SUM/train_weights_sum
+                hyperbolic_train_metric_value = hyperbolic_train_metric_SUM/train_weights_sum
+
+                distributional_val_metric_value = distributional_val_metric_SUM/val_weights_sum
+                hyperbolic_val_metric_value = hyperbolic_val_metric_SUM/val_weights_sum
 
             losses_dict = {'Losses/Hyperbolic Losses': {'Train': hyperbolic_train_loss_value, 
                                                  'Val': hyperbolic_val_loss_value},
@@ -904,15 +1120,27 @@ class ShimaokaMTNCI(MTNCI):
 
             self.checkpointManager(val_loss_value)
 
+            metric_dict = {'Metrics/Hyperbolic Metrics': {'Train': hyperbolic_train_metric_value, 
+                                                 'Val': hyperbolic_val_metric_value},
+                           'Metrics/Distributional Metrics':  {'Train': distributional_train_metric_value,
+                                                                'Val': distributional_val_metric_value},
+                            }
+
+
             self.log_losses(losses_dict = losses_dict, epoch = epoch + 1)
-
+            self.log_losses(losses_dict=metric_dict, epoch = epoch + 1)
             print('{:^15}'.format('epoch {:^3}/{:^3}'.format(epoch, self.epochs)))
-            print('{:^15}'.format('Train loss: {:.4f}, Val loss: {:.4f}'.format(train_loss_value, val_loss_value)
-                                                                            
-                                )
-                )
+            print('{:^15}'.format('Train loss: {:.4f}, Val loss: {:.4f}'.format(train_loss_value, val_loss_value)))
+            print('{:^25}'.format('T_MHD: {:.4f}, V_MHD:{:.4f}'.format(hyperbolic_train_metric_value, hyperbolic_val_metric_value)))
+            print('{:^25}'.format('T_MDD: {:.4f}, V_MDD:{:.4f}'.format(distributional_train_metric_value, distributional_val_metric_value)))
 
-    def type_prediction_on_test(self, topn, test_data, labels, entities):
+    def type_prediction_on_test(self, topn, test_data, entities, labels):
+
+        checkpoint = torch.load(self.checkpoint_path)
+
+        self.load_state_dict(checkpoint['model_state_dict'])
+        
+        self.eval()
 
         self.topn = topn
 
@@ -925,7 +1153,7 @@ class ShimaokaMTNCI(MTNCI):
             x[0].extend(pred[0].detach().cpu().numpy())
             x[1].extend(pred[1].detach().cpu().numpy())
         
-        self.compute_prediction(x, labels, entities)
+        self.compute_prediction(x, labels = labels, entities = entities)
 
 
 
@@ -945,7 +1173,6 @@ class CharEncoder(nn.Module):
         cnn_rep = [F.max_pool1d(i, i.size(2)) for i in conv_output]  # batch_size, filter_dim, 1, filter_num
         cnn_output = torch.squeeze(torch.cat(cnn_rep, 1), 2)  # batch_size, filter_num * filter_dim, 1
         return cnn_output
-
 class MentionEncoder(nn.Module):
 
     def __init__(self, char_vocab, args):
@@ -1002,6 +1229,7 @@ class ContextEncoder(nn.Module):
     def sorted_rnn(self, ctx_embeds, context_len):
         sorted_inputs, sorted_sequence_lengths, restoration_indices = self.sort_batch_by_length(ctx_embeds, context_len)
         packed_sequence_input = pack(sorted_inputs, sorted_sequence_lengths, batch_first=True)
+        self.rnn.flatten_parameters()
         packed_sequence_output, _ = self.rnn(packed_sequence_input, None)
         unpacked_sequence_tensor, _ = unpack(packed_sequence_output, batch_first=True)
         return unpacked_sequence_tensor.index_select(0, restoration_indices)

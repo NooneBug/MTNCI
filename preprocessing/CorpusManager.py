@@ -69,8 +69,7 @@ class CorpusManager():
                     self.all_entities_tokens.add(e)
                 else:
                     for s in splitted:
-                        self.all_entities_tokens.add(s)
-        
+                        self.all_entities_tokens.add(s)        
         self.entities_token_in_corpus = self.all_entities_tokens.intersection(self.vocab)
         self.all_entities_tokens = list(self.all_entities_tokens)
 
