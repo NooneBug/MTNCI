@@ -61,3 +61,13 @@ def inverse_projection(v, r):
 
 def euclidean_similarity(*args):
     return 1/(1 + euclidean_distances(*args))
+
+
+LOSSES = {'cosine_dissimilarity': 'COSD',
+                       'hyperbolic_distance': 'HYPD',
+                       'normalized_hyperbolic_distance': 'NHYPD',
+                       'regularized_hyperbolic_distance': 'RHYPD',
+                       'hyperboloid_distance' : 'LORENTZD',
+                       'multilabel_Minimum_Poincare': 'HMML',
+                       'multilabel_Minimum_cosine': 'DMML'
+        }

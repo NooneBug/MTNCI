@@ -20,37 +20,43 @@ class argClass():
         self.mention_dropout = 0.5
         self.context_dropout = 0.5
 
-lopez_data = torch.load('../figet-hyperbolic-space/data/prep/correct-20/data.pt')
-word2vec = torch.load('../figet-hyperbolic-space/data/prep/correct-20/word2vec.pt')
+lopez_data = torch.load('../figet-hyperbolic-space/data/prep/covid-2/data.pt')
+word2vec = torch.load('../figet-hyperbolic-space/data/prep/covid-2/word2vec.pt')
 
 
 args = {'emb_size': 300, 'char_emb_size': 50, 'positional_emb_size': 25, 'context_rnn_size':200,
         'attn_size': 100, 'mention_dropout' : 0.5, 'context_dropout': 0.2}
 args = argClass(args)
 vocabs = lopez_data['vocabs']
+dims = [512, 512]
 SHIMAOKA_OUT = args.context_rnn_size * 2 + args.emb_size + args.char_emb_size
-out_spec = [{'manifold':'euclid', 'dim':[64, 10]},
-            {'manifold':'poincare', 'dim':[128, 128, 10]}]
+out_spec = [{'manifold':'euclid', 'dim':[256, 10]},
+            # {'manifold':'poincare', 'dim':[128, 128, 10]}]
+            {'manifold':'poincare', 'dim':[512, 256, 10]}]
 
-NAME = 'correct_5'
+# NAME = 'covid_unw_2'
+NAME = 'unw_covid_arch10_4'
 
 regularized = False
 regul_dict = {'negative_sampling': 0, 'mse': 50, 'distance_power':1}
 
 
 tensorboard_run_ID = NAME
-results_path = 'results/excel_results/' + NAME + '.txt'
-TSV_path = 'results/excel_results/export_' + NAME + '.txt'
+results_path = 'results/excel_results/covid/' + NAME + '_train.txt'
+TSV_path = 'results/excel_results/covid/export_' + NAME + '_train.txt'
 
-llambda = 0.8
-weighted = True
+lr = 1e-3
+
+llambda = 0.5
+weighted = False
 epochs = 50
 patience = 50
 
-times = 1
-perc = 1
+times = 8
+perc = 0.1
 
 nickel = True
+cleaned = True
 # tensorboard_run_ID = '1_shimaoka_hinge_nickel'
 
 FILE_ID = '16_3'
@@ -58,15 +64,11 @@ FILE_ID = '16_3'
 SOURCE_FILES_PATH = '/datahdd/vmanuel/MTNCI_datasets/source_files/'
 # SOURCE_FILES_PATH = '../source_files/'
 
-EMBEDDING_PATH = SOURCE_FILES_PATH + 'embeddings/'
+EMBEDDING_PATH = './covid/models/'
 
-# PATH_TO_HYPERBOLIC_EMBEDDING = EMBEDDING_PATH + FILE_ID + 'final_tree_HyperE_MTNCI'
-# PATH_TO_HYPERBOLIC_EMBEDDING = EMBEDDING_PATH + FILE_ID + 'final_tree_HyperE_MTNCI_32'
-# PATH_TO_HYPERBOLIC_EMBEDDING = EMBEDDING_PATH + FILE_ID + '_multilabel_final_tree_HyperE_MTNCI_10'
-PATH_TO_HYPERBOLIC_EMBEDDING = EMBEDDING_PATH + FILE_ID + '16_3_nickel.pth'
+PATH_TO_HYPERBOLIC_EMBEDDING = EMBEDDING_PATH + 'covid.pth.best'
 
-
-PATH_TO_DISTRIBUTIONAL_EMBEDDING = EMBEDDING_PATH + FILE_ID + 'final_tree_type2vec_MTNCI'
+PATH_TO_DISTRIBUTIONAL_EMBEDDING = EMBEDDING_PATH + 'type2vec_cleaned'
 
 CONCEPT_EMBEDDING_PATHS = [PATH_TO_DISTRIBUTIONAL_EMBEDDING, 
                            PATH_TO_HYPERBOLIC_EMBEDDING]
@@ -93,14 +95,14 @@ if __name__ == "__main__":
     val_labels = [lopez_data['vocabs']['type'].idx2label[label.item()] for entry in val for labels in entry[5] for label in labels]
     test_labels = [lopez_data['vocabs']['type'].idx2label[label.item()] for entry in test for labels in entry[5] for label in labels]
     
-    # train_entities = []
-    # for entry in tqdm(train): 
-    #     for entities in entry[3]:
-    #         entity_label = ''
-    #         for entity in entities:
-    #             if entity.item() != 0:
-    #                 entity_label += lopez_data['vocabs']['token'].idx2label[entity.item()] + ' '
-    #         train_entities.append(entity_label)
+    train_entities = []
+    for entry in tqdm(train): 
+        for entities in entry[3]:
+            entity_label = ''
+            for entity in entities:
+                if entity.item() != 0:
+                    entity_label += lopez_data['vocabs']['token'].idx2label[entity.item()] + ' '
+            train_entities.append(entity_label)
     
     test_entities = []
     for entry in tqdm(test): 
@@ -113,7 +115,7 @@ if __name__ == "__main__":
 
     datasetManager = DatasetManager(FILE_ID)
     datasetManager.set_device(device)
-    datasetManager.load_concept_embeddings(CONCEPT_EMBEDDING_PATHS = CONCEPT_EMBEDDING_PATHS, nickel = nickel)
+    datasetManager.load_concept_embeddings(CONCEPT_EMBEDDING_PATHS = CONCEPT_EMBEDDING_PATHS, nickel = nickel, cleaned = cleaned)
     
     train_data = {'data': train, 'labels': train_labels}
     val_data = {'data': val, 'labels': val_labels}
@@ -124,7 +126,7 @@ if __name__ == "__main__":
     model = ShimaokaMTNCI(args, vocabs, device, 
                     input_d=SHIMAOKA_OUT,
                     out_spec = out_spec,
-                    dims = [512, 512])
+                    dims = dims)
     
     model.init_params(word2vec=word2vec)
 
@@ -135,7 +137,6 @@ if __name__ == "__main__":
     model.initialize_tensorboard_manager(tensorboard_run_ID)
 
     model.set_device(device)
-    lr = 1e-3
     
     model.set_optimizer(optimizer = RiemannianAdam(model.parameters(), lr = lr))
 
@@ -159,9 +160,9 @@ if __name__ == "__main__":
         model.set_regularization_params(regul_dict)
 
     print('... training model ... ')
-    model.train_model()
+    # model.train_model()
 
     topn = [1, 2, 5]
 
-    model.type_prediction_on_test(topn, test_data, test_entities, test_labels)
-    # model.type_prediction_on_test(topn, train_data, train_entities, train_labels)
+    # model.type_prediction_on_test(topn, test_data, test_entities, test_labels)
+    model.type_prediction_on_test(topn, train_data, train_entities, train_labels)

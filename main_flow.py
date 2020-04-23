@@ -12,14 +12,13 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 multilabel = False
 load_dataset = True
-filter_dataset = False
+filter_dataset = True
 threshold = 0.1
 distance = cosine_similarity
 normalize = True
 exclude_min_threshold = 20
 
-# NAME = '8_regularized'
-NAME = '4_fair_sampled'
+NAME = '1_fair_cosine_50'
 
 tensorboard_run_ID = NAME
 results_path = 'results/excel_results/' + NAME + '.txt'
@@ -27,7 +26,7 @@ TSV_path = 'results/excel_results/export_' + NAME + '.txt'
 
 nickel = True
 lr = 1e-3
-regularized = False
+regularized = True
 regul_dict = {'negative_sampling': 0, 'mse': 50, 'distance_power':1}
 
 llambda = 0.1
