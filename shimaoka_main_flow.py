@@ -8,6 +8,7 @@ import figet
 from geoopt.optim import RiemannianAdam
 from tqdm import tqdm
 
+from AAA import send
 
 class argClass():
     
