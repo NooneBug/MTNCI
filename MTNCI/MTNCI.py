@@ -12,6 +12,13 @@ from collections import defaultdict
 from tqdm import tqdm
 import random
 from MTNCI.ShimaokaModels import CharEncoder, MentionEncoder, SelfAttentiveSum, ContextEncoder
+from preprocessing.utils import LOSSES
+import copy
+from torch.nn import Sigmoid
+
+import sys 
+sys.path.append('../figet-hyperbolic-space')
+from figet.Constants import *
 
 class CommonLayer(nn.Module):
     def __init__(self, 
@@ -192,7 +199,7 @@ class MTNCI(nn.Module):
         # hyperbolic_val_metric_manager = self.get_prediction_manager(loss_name=losses['hyperbolic_distance'])
         hyperbolic_val_metric_manager = self.get_prediction_manager(loss_name=self.metric_name_dict['hyperbolic'])
         # distributional_val_metric_manager = self.get_prediction_manager(loss_name=losses['cosine_dissimilarity'])
-        distributional_val_metric_manager = self.get_prediction_manager(loss_name=self.metric_name_dict['hyperbolic'])
+        distributional_val_metric_manager = self.get_prediction_manager(loss_name=self.metric_name_dict['distributional'])
 
         if self.weighted:
 
@@ -240,12 +247,12 @@ class MTNCI(nn.Module):
                     if random.random() < self.PERC:
 
                         x, labels, targets = self.datasetManager.get_epoch_data(dataset='train', batch_iteration = batch_iteration)
-                        
+
                         ######################
                         ####### TRAIN ########
                         ######################
-                        
-                        
+                        # print('xs: {}'.format(x[0].shape))
+                        # print('targets: {}'.format(targets['hyperbolic'].shape))
                         self.optimizer.zero_grad()
                         
                         self.train()
@@ -283,8 +290,9 @@ class MTNCI(nn.Module):
                         hyperbolic_train_loss = hyperbolic_prediction_train_manager.compute_loss()
                         
                         distributional_train_loss_SUM += torch.sum(distributional_train_loss * self.llambdas['distributional']).item()
-                        hyperbolic_train_loss_SUM += torch.sum(hyperbolic_train_loss * (self.llambdas['hyperbolic'])).item()
+                        hyperbolic_train_loss_SUM += torch.sum(hyperbolic_train_loss * self.llambdas['hyperbolic']).item()
                         
+
                         distributional_train_metric = distributional_train_metric_manager.compute_loss()
                         hyperbolic_train_metric = hyperbolic_train_metric_manager.compute_loss()
 
@@ -344,7 +352,7 @@ class MTNCI(nn.Module):
 
                     distributional_val_loss = distributional_prediction_val_manager.compute_loss()
                     hyperbolic_val_loss = hyperbolic_prediction_val_manager.compute_loss()
-                    
+
                     distributional_val_loss_SUM += torch.sum(distributional_val_loss * self.llambdas['distributional']).item()
                     hyperbolic_val_loss_SUM += torch.sum(hyperbolic_val_loss * (self.llambdas['hyperbolic'])).item()
                     
@@ -412,7 +420,7 @@ class MTNCI(nn.Module):
             metric_dict = {'Metrics/Hyperbolic Metrics': {'Train': hyperbolic_train_metric_value, 
                                                  'Val': hyperbolic_val_metric_value},
                            'Metrics/Distributional Metrics':  {'Train': distributional_train_metric_value,
-                                                                'Val': distributional_val_metric_value},
+                                                                'Val': distributional_val_metric_value}
                             }
             self.log_losses(losses_dict = losses_dict, epoch = epoch + 1)
 
@@ -628,8 +636,14 @@ class MTNCI(nn.Module):
                                     labels = labels)        
 
     def entity_level_prediction(self, predictions, labels, entities):
-        entities_dict = {e: [v for v, entity in zip(predictions, entities) if entity == e] for e in set(entities)}
-        entities_labels = {e: l for e, l in zip(entities, labels)}
+
+
+        entities_and_labels = ['{}_{}'.format(e, l) for e, l in zip(entities, labels)]
+
+        entities_dict = {e: [v for v, entity in zip(predictions, entities_and_labels) if entity == e] for e in set(entities_and_labels)}
+
+        # entities_dict = {e: [v for v, entity in zip(predictions, entities) if entity == e] for e in set(entities)}
+        entities_labels = {e: l for e, l in zip(entities_and_labels, labels)}
 
         entities_predictions = self.induce_vector(entities_dict)
 
@@ -654,8 +668,11 @@ class MTNCI(nn.Module):
     def concept_level_prediction(self, predictions, labels, entities = None):
         if entities:
             # induce entities and then induce concepts from entities
-            entities_dict = {e: [v for v, entity in zip(predictions, entities) if entity == e] for e in set(entities)}
-            entities_labels = {e: l for e, l in zip(entities, labels)}
+            entities_and_labels = ['{}_{}'.format(e, l) for e, l in zip(entities, labels)]
+            entities_dict = {e: [v for v, entity in zip(predictions, entities_and_labels) if entity == e] for e in set(entities_and_labels)}
+
+            # entities_dict = {e: [v for v, entity in zip(predictions, entities) if entity == e] for e in set(entities)}
+            entities_labels = {e: l for e, l in zip(entities_and_labels, labels)}
 
             entities_vectors = self.induce_vector(entities_dict)
 
@@ -702,7 +719,7 @@ class MTNCI(nn.Module):
 
     def save_TSV(self, space):
         if space == 'distributional':
-            out = open(self.TSV_path, 'w')
+            out = open(self.TSV_path, 'a')
         else:
             out = open(self.TSV_path, 'a')
         
@@ -790,16 +807,30 @@ class Embedding:
         except:
             raise Exception('label not this embedding ({}'.format(self.name)) from e
 
-    def get_neigh(self, vector, top = None):
+    def get_neigh(self, vector, top = None, include = 'all'):
         if not top:
             top = len(self.embedding)
-        neigh, similarities = self.find_neigh(vector, top)
+        neigh, similarities = self.find_neigh(vector, top, include)
         return neigh
 
-    def find_neigh(self, vec, topn):
+    def find_neigh(self, vec, topn, include = 'all'):
         dists = {}
+
+        if include == 'coarse':
+            include_list = COARSE
+        elif include == 'fine':
+            include_list = FINE
+        elif include == 'ultrafine':
+            include_list = set(self.embedding.keys()).difference(set(COARSE))
+            include_list = include_list.difference(set(FINE))
+
         for k, v in self.embedding.items():
-            dists[k] = self.distance(v, vec)
+            if include == 'all':
+                dists[k] = self.distance(v, vec)
+            elif k in include_list:
+                dists[k] = self.distance(v, vec)
+
+            
         return [a for a, b in sorted(dists.items(), key=lambda item: item[1])[:topn]], [b for a, b in sorted(dists.items(), key=lambda item: item[1])[:topn]]
 
     def set_centroid_method(self, method):
@@ -812,14 +843,7 @@ class Embedding:
 class Prediction:
 
     def __init__(self, device = None, weighted = False):
-        self.LOSSES = {'cosine_dissimilarity': 'COSD',
-                       'hyperbolic_distance': 'HYPD',
-                       'normalized_hyperbolic_distance': 'NHYPD',
-                       'regularized_hyperbolic_distance': 'RHYPD',
-                       'hyperboloid_distance' : 'LORENTZD',
-                       'multilabel_Minimum_Poincare': 'HMML',
-                       'multilabel_Minimum_cosine': 'DMML'
-        }
+        self.LOSSES = LOSSES
         self.device = device
         self.weighted = weighted
 
@@ -842,8 +866,14 @@ class Prediction:
             self.selected_loss = regularizedPoincareDistanceLoss(device = self.device)
         elif loss_name == self.LOSSES['multilabel_Minimum_Poincare']:
             self.selected_loss = multilabelMinimumPoincareDistanceLoss(device=self.device)
-        elif loss_name == self.LOSSES['multilabel_Minimum_cosine']:
+        elif loss_name == self.LOSSES['multilabel_Minimum_Normalized_Poincare']:
+            self.selected_loss = multilabelMinimumNormalizedPoincareDistanceLoss(device=self.device)
+        elif loss_name == self.LOSSES['multilabel_Minimum_Cosine']:
             self.selected_loss = multilabelMinimumCosineDistanceLoss(device=self.device)
+        elif loss_name == self.LOSSES['multilabel_Average_Poincare']:
+            self.selected_loss = multilabelAveragePoincareDistanceLoss(device=self.device)
+        elif loss_name == self.LOSSES['multilabel_Average_Cosine']:
+            self.selected_loss = multilabelAverageCosineDistanceLoss(device=self.device)
         
     def set_regularization_params(self, regul_dict):
         print('setting regul params for {}'.format(self.selected_loss))
@@ -927,7 +957,6 @@ class normalizedPoincareDistanceLoss(Loss):
     def acosh(self, x):
         return torch.log(x + torch.sqrt(x**2-1))
 
-
 class regularizedPoincareDistanceLoss(poincareDistanceLoss):
 
     def set_regularization(self, regul):
@@ -957,20 +986,116 @@ class regularizedPoincareDistanceLoss(poincareDistanceLoss):
         
         return acos**self.regul['distance_power'] + l0 * self.regul['negative_sampling'] + l1 * self.regul['mse']
 
-class multilabelMinimumPoincareDistanceLoss(normalizedPoincareDistanceLoss):
+class multilabelMinimumNormalizedPoincareDistanceLoss(normalizedPoincareDistanceLoss):
     def compute_loss(self, true, pred):
-        # RAGIONARE PER BATCH
-        for i, t in enumerate(true):
-            loss = super().compute_loss(true = t, pred = pred)
+        # print('----------------------------')
+        # print('true: {}'.format(true.shape))
+        for i in range(true.shape[1]):
+            t = torch.index_select(true, 1, index=torch.tensor([i], device=self.device)).squeeze()
+
+            if len(t.shape) == 1:
+                t = t.view(1, t.shape[0])
+
+            # print('t: {}'.format(t.shape))
+            # print('pred: {}'.format(pred.shape))
+            
+            loss = super().compute_loss(true = t, pred = pred).view(1, true.shape[0])
             
             if i == 0:
-                min_loss = loss
-            elif loss < min_loss:
-                min_loss = loss
+                min_tensor = loss
+            else:
+                catted = torch.cat((loss, min_tensor), dim = 0)
+                min_tensor, _ = torch.min(catted, dim=0)
+                min_tensor = min_tensor.view(1, true.shape[0])
 
-        return min_loss
+        return min_tensor
 
-class multilabelMinimumCosineDistanceLoss(self, true, pred):
+class multilabelMinimumPoincareDistanceLoss(poincareDistanceLoss):
+    def compute_loss(self, true, pred):
+        # print('----------------------------')
+        # print('true: {}'.format(true.shape))
+        for i in range(true.shape[1]):
+            t = torch.index_select(true, 1, index=torch.tensor([i], device=self.device)).squeeze()
+
+            if len(t.shape) == 1:
+                t = t.view(1, t.shape[0])
+
+            # print('t: {}'.format(t.shape))
+            # print('pred: {}'.format(pred.shape))
+            
+            loss = super().compute_loss(true = t, pred = pred).view(1, true.shape[0])
+            
+            if i == 0:
+                min_tensor = loss
+            else:
+                catted = torch.cat((loss, min_tensor), dim = 0)
+                min_tensor, _ = torch.min(catted, dim=0)
+                min_tensor = min_tensor.view(1, true.shape[0])
+
+        return min_tensor
+
+class multilabelMinimumCosineDistanceLoss(cosineLoss):
+    def compute_loss(self, true, pred):
+        for i in range(true.shape[1]):
+            t = torch.index_select(true, 1, index=torch.tensor([i], device=self.device)).squeeze()
+
+            if len(t.shape) == 1:
+                t = t.view(1, t.shape[0])
+
+            # print('t: {}'.format(t.shape))
+            # print('pred: {}'.format(pred.shape))
+            
+            loss = super().compute_loss(true = t, pred = pred).view(1, true.shape[0])
+            
+            if i == 0:
+                min_tensor = loss
+            else:
+                catted = torch.cat((loss, min_tensor), dim = 0)
+                min_tensor, _ = torch.min(catted, dim=0)
+                min_tensor = min_tensor.view(1, true.shape[0])
+
+        return min_tensor
+
+class multilabelAveragePoincareDistanceLoss(poincareDistanceLoss):
+    def compute_loss(self, true, pred):
+        for i in range(true.shape[1]):
+            t = torch.index_select(true, 1, index=torch.tensor([i], device=self.device)).squeeze()
+
+            if len(t.shape) == 1:
+                t = t.view(1, t.shape[0])
+
+            # print('t: {}'.format(t.shape))
+            # print('pred: {}'.format(pred.shape))
+            
+            loss = super().compute_loss(true = t, pred = pred).view(1, true.shape[0])
+            if i == 0:
+                mean_tensor = loss
+            else:
+                mean_tensor = torch.cat((loss, mean_tensor), dim = 0)
+
+
+        return torch.mean(mean_tensor, dim = 0)
+
+class multilabelAverageCosineDistanceLoss(cosineLoss):
+    def compute_loss(self, true, pred):
+        for i in range(true.shape[1]):
+            t = torch.index_select(true, 1, index=torch.tensor([i], device=self.device)).squeeze()
+
+            if len(t.shape) == 1:
+                t = t.view(1, t.shape[0])
+
+            # print('t: {}'.format(t.shape))
+            # print('pred: {}'.format(pred.shape))
+            
+            loss = super().compute_loss(true = t, pred = pred).view(1, true.shape[0])
+            
+            if i == 0:
+                mean_tensor = loss
+            else:
+                mean_tensor = torch.cat((loss, mean_tensor), dim = 0)
+
+        return torch.mean(mean_tensor, dim = 0)
+
 
 
 class ShimaokaMTNCI(MTNCI):
@@ -996,6 +1121,12 @@ class ShimaokaMTNCI(MTNCI):
         return super().forward(input)
 
     def forward(self, input):
+
+        input_vec = self.get_shimaoka_output(input)
+        
+        return super().forward(input_vec)
+    
+    def get_shimaoka_output(self, input):
         contexts, positions, context_len = input[0], input[1].double(), input[2]
         mentions, mention_chars = input[3], input[4]
         type_indexes = input[5]
@@ -1005,9 +1136,9 @@ class ShimaokaMTNCI(MTNCI):
         context_vec, attn = self.context_encoder(contexts, positions, context_len, self.word_lut)
 
         input_vec = torch.cat((mention_vec, context_vec), dim=1)
-        
-        return super().forward(input_vec)
-    
+
+        return input_vec
+
     def type_prediction_on_test(self, topn, test_data, entities, labels):
 
         checkpoint = torch.load(self.checkpoint_path)
@@ -1017,11 +1148,8 @@ class ShimaokaMTNCI(MTNCI):
         except:
             pass
 
-
         self.load_state_dict(checkpoint['model_state_dict'])
 
-
-        
         self.eval()
 
         self.topn = topn
@@ -1073,4 +1201,787 @@ class LopezLike(ShimaokaMTNCI):
         return self.sigmoid(output)
 
 class ChoiMTNCI(ShimaokaMTNCI):
-    pass
+
+    def compute_prediction(self, test_predictions, labels, entities = None):
+        
+        self.tsv = {'distributional':{'HITS': []},
+                    'hyperbolic': {'HITS': []}
+                    }
+
+        for space, preds in zip(['distributional', 'hyperbolic'], test_predictions):
+            print(' ...evaluating test predictions in {} space... '.format(space))
+            self.emb = Embedding()            
+            self.emb.set_embedding(self.datasetManager.concept_embeddings[space])
+            self.emb.set_name(space)
+            
+            if space == 'distributional':
+                self.emb.set_distance(cosine_dissimilarity)
+                self.emb.set_centroid_method(vector_mean)
+            elif space == 'hyperbolic':
+                self.emb.set_distance(hyper_distance)
+                self.emb.set_centroid_method(hyperbolic_midpoint)
+            
+            # print('occurrence {}'.format(space))
+            # HITS = self.occurrence_level_prediction(predictions = preds, 
+                                                    # labels = labels)
+            
+            # self.fill_TSV(space = space, HITS= HITS)
+
+            # self.save_results(HITS=HITS,
+                            #   level_name = 'Occurrence Level in {} space'.format(space))
+
+            correct_granularities, all_granularities = self.compute_granularity_metric(predictions= preds, 
+                                                                                        labels = labels)
+            
+            self.save_granularity_results(correct = correct_granularities, all_res = all_granularities)
+
+
+            measures, perfect_measures = self.compute_IR_metrics(predictions = preds, labels_lists = labels)
+
+            self.save_IR_results(measures = measures, perfect = perfect_measures)
+
+
+    def occurrence_level_prediction(self, predictions, labels, granularities = ['coarse', 'fine', 'ultrafine', 'all']):
+
+        corrects_n = 0
+        total_n = len(labels)
+
+        return self.compute_metrics(total=total_n,
+                                    predictions= predictions,
+                                    labels = labels,
+                                    granularities=granularities)        
+
+    def compute_metrics(self, total, 
+                        predictions, labels, granularities = ['coarse', 'fine', 'ultrafine', 'all']):
+        
+        HITS_at_n = {t: 0 for t in self.topn}
+
+        HITS_at_n = {g: copy.deepcopy(HITS_at_n) for g in granularities}
+
+        concept_predicted = defaultdict(int)
+        correct_prediction = defaultdict(int)
+        corrects_n = {t: 0 for t in self.topn}
+
+        corrects_n = {g: copy.deepcopy(corrects_n) for g in granularities}
+
+        bar = tqdm(total=len(predictions))
+        bar.set_description('getting results')
+        
+        all_ = {g: {t: 0 for t in self.topn} for g in granularities}
+
+        i = 0
+
+        for pred, label in zip(predictions, labels):
+            for g in granularities:
+                neigh = self.emb.get_neigh(vector = pred, top = max(self.topn), include = g)
+                for t in self.topn:
+                    new_neigh = neigh[:t]
+                    filtered_labels = self.filter_labels(label, gran=g)
+                    if filtered_labels:
+                        all_[g][t] += 1
+                        if set(filtered_labels).intersection(set(new_neigh)):
+                            corrects_n[g][t] += 1
+            bar.update(1)
+
+            
+            i += 1
+
+        bar.close()
+
+        for g in HITS_at_n.keys():
+            for t in self.topn:
+                HITS_at_n[g][t] = corrects_n[g][t]/all_[g][t]
+        return HITS_at_n
+
+    def save_results(self, HITS, level_name):
+        with open(self.results_path, 'a') as out:
+            out.write('\n{} results: \n'.format(level_name))
+            for t in self.topn:
+                for g in HITS.keys():
+                    string = 'taking first {} {} neighbours'.format(t, g)         
+                    out.write('\t HITS {:40}: {:.4f}\n'.format(string, HITS[g][t]))
+                out.write('\n')
+
+    def compute_granularity_metric(self, predictions, labels):
+        correct_granularities = {'coarse': 0, 'fine': 0, 'ultrafine': 0}
+        all_granularities = {'coarse': 0, 'fine': 0, 'ultrafine': 0}
+
+        correct_granularities = {t: copy.deepcopy(correct_granularities) for t in self.topn}
+        all_granularities = {t: copy.deepcopy(all_granularities) for t in self.topn}
+
+        bar = tqdm(total=len(predictions))
+
+        i = 0
+        for pred, label in zip(predictions, labels):
+            bar.set_description('getting results granularity distributions')
+            neigh = self.emb.get_neigh(vector = pred, top = max(self.topn))
+        
+            for t in self.topn:
+                new_neigh = neigh[:t]
+                for n in new_neigh:
+                    if n in COARSE:
+                        all_granularities[t]['coarse'] += 1
+                        if n in label:
+                            correct_granularities[t]['coarse'] += 1
+                    elif n in FINE:
+                        all_granularities[t]['fine'] += 1
+                        if n in label:
+                            correct_granularities[t]['fine'] += 1
+                    else:
+                        all_granularities[t]['ultrafine'] += 1
+                        if n in label:
+                            correct_granularities[t]['ultrafine'] += 1
+            bar.update(1)
+
+            # if i > 9:
+            #     break
+
+            i += 1
+
+        bar.close()
+        
+        return correct_granularities, all_granularities
+
+    def save_TSV_granularity(self, correct, all_res):
+        with open(self.TSV_path, 'a') as out:
+            out.write('\nresults for {}\n'.format(self.emb.name))
+            out.write('granularity:\n')
+            for t in self.topn:
+
+                sum_all = sum(all_res[t].values())
+                sum_correct = sum(correct[t].values())
+
+                coarse_frac = 0
+                fine_frac = 0
+                ultrafine_frac = 0
+
+                if sum_correct:
+                    coarse_frac = correct[t]['coarse']/sum_correct
+                    fine_frac = correct[t]['fine']/sum_correct
+                    ultrafine_frac = correct[t]['ultrafine']/sum_correct
+                string = ''
+
+                string += '{:.4f}\t'.format(coarse_frac)
+                string += '{:.4f}\t'.format(fine_frac)
+                string += '{:.4f}\t'.format(ultrafine_frac)
+
+                string += '{}\t'.format(sum_correct)
+
+                correct_coarse = all_res[t]['coarse']/sum_all
+                correct_fine = all_res[t]['fine']/sum_all
+                correct_ultra = all_res[t]['ultrafine']/sum_all
+
+                string += '{:.4f}\t'.format(correct_coarse)
+                string += '{:.4f}\t'.format(correct_fine)
+                string += '{:.4f}\t\n'.format(correct_ultra)
+
+                out.write(string)
+
+
+    def save_granularity_results(self, correct, all_res):
+
+        self.save_TSV_granularity(correct, all_res)
+
+        with open(self.results_path, 'a') as out:
+            out.write('\nGranularity Metrics:')
+            for t in self.topn:
+                out.write('\n------------------------ topn: {}--------------------------\n'.format(t))
+
+
+                sum_all = sum(all_res[t].values())
+                sum_correct = sum(correct[t].values())
+
+                coarse_frac = 0
+                fine_frac = 0
+                ultrafine_frac = 0
+
+                if sum_correct:
+                    coarse_frac = correct[t]['coarse']/sum_correct
+                    fine_frac = correct[t]['fine']/sum_correct
+                    ultrafine_frac = correct[t]['ultrafine']/sum_correct
+
+                out.write('\t all predictions: {}, correct predictions: {}\n'.format(sum_all, sum_correct))
+                out.write('\t predicted coarse: {:.2f}\n\t predicted fine: {:.2f}\n\t predicted ultrafine: {:.2f}\n\n'.format(all_res[t]['coarse']/sum_all,
+                                                                                                                          all_res[t]['fine']/sum_all,
+                                                                                                                          all_res[t]['ultrafine']/sum_all))
+                out.write('\t correct coarse: {:.2f}\n\t correct fine: {:.2f}\n\t correct ultrafine: {:.2f}\n'.format(coarse_frac ,
+                                                                                                                    fine_frac,
+                                                                                                                    ultrafine_frac))
+
+
+
+
+    def compute_IR_metrics(self, predictions, labels_lists, granularities = ['coarse', 'fine', 'ultrafine', 'all']):
+        
+        precision = {g: {t: 0 for t in self.topn} for g in granularities}
+        recall = {g: {t: 0 for t in self.topn} for g in granularities}        
+        
+        precision_values = {g: {t: [] for t in self.topn} for g in granularities}
+        recall_values = {g: {t: [] for t in self.topn} for g in granularities}
+        
+        perfect_score_precision = {g: {t: [] for t in self.topn} for g in granularities}
+        perfect_score_recall = {g: {t: [] for t in self.topn} for g in granularities}
+        perfect_score_fmeasure = {g: {t: [] for t in self.topn} for g in granularities}
+
+        fmeasure = {g: {t: 0 for t in self.topn} for g in granularities}
+
+        bar = tqdm(total=len(predictions))
+
+        i = 0
+        for pred, labels in zip(predictions, labels_lists):
+            bar.set_description('getting IR results')
+            for g in granularities:
+                neigh = self.emb.get_neigh(vector = pred, top = max(self.topn), include=g)
+                
+                if g != 'all':
+                    filtered_labels = self.filter_labels(labels=labels, gran = g)
+                else:
+                    filtered_labels = labels
+                if filtered_labels:
+                    for t in self.topn:
+                        new_neigh = neigh[:t]
+                        corrects = 0
+                        for n in new_neigh:
+                            if n in filtered_labels:
+                                corrects += 1
+                        prec = corrects / len(new_neigh)
+                        rec = corrects / len(filtered_labels)
+
+                        if len(filtered_labels) > t:
+                            perfect_score_precision[g][t].append(1)
+                            perfect_score_recall[g][t].append(t/len(filtered_labels))
+                        else:
+                            perfect_score_precision[g][t].append(len(filtered_labels)/t)
+                            perfect_score_recall[g][t].append(1)
+
+                        precision_values[g][t].append(prec)
+                        recall_values[g][t].append(rec)
+            bar.update(1)
+
+            # if i > 9:
+            #     break
+
+            i += 1
+        
+        bar.close()
+        for g in granularities:
+            for t in self.topn:
+                precision[g][t] = np.mean(precision_values[g][t])
+                recall[g][t] = np.mean(recall_values[g][t])
+                fmeasure[g][t] = self.f1(p=precision[g][t], r=recall[g][t])
+
+                perfect_score_precision[g][t] = np.mean(perfect_score_precision[g][t])
+                perfect_score_recall[g][t] = np.mean(perfect_score_recall[g][t])
+                perfect_score_fmeasure[g][t] = self.f1(p=perfect_score_precision[g][t], r=perfect_score_recall[g][t])
+
+        return [precision, recall, fmeasure], [perfect_score_precision, perfect_score_recall, perfect_score_fmeasure]
+
+    def filter_labels(self, labels, gran):
+        if gran == 'coarse':
+            filter_list = COARSE
+        elif gran == 'fine':
+            filter_list = FINE
+        else:
+            filter_list = set(self.emb.embedding.keys()).difference(set(COARSE))
+            filter_list = filter_list.difference(set(FINE))
+
+        return [l for l in labels if l in filter_list]
+
+    def save_TSV_IR(self, measures, perfect):
+
+        with open(self.TSV_path, 'a') as out:
+
+            lopez_lines = ['', '', '']
+            # coarse_lines = ['', '', '']
+            # fine_lines = ['', '', '', '']
+            # ultrafine_lines = ['', '', '']
+            # all_lines = ['', '', '']
+
+            lines = ['', '', '']
+
+            k_dict = {'coarse': 1, 'fine': 1, 'ultrafine': 1, 'all': 1}
+
+            out.write('\nlopez-like evaluation:\n')
+
+            for g in list(measures[0].keys()):
+                t = k_dict[g]
+                i = 0
+                for l, m, d_m in zip(lopez_lines, ['precision', 'recall', 'fmeasure'], measures):
+                    lopez_lines[i] = l + '{:.4f}\t'.format(d_m[g][t])
+                    i += 1
+            
+            for l in lopez_lines:
+                out.write(l[:-2] + '\n')
+            
+
+            out.write('\n single granularity metrics: \n'.format(g))
+            
+            granularities = ['coarse', 'fine', 'ultrafine', 'all']
+
+            for g in granularities:
+                for t in self.topn:
+                    i = 0
+                    for l, m, d_m in zip(lines, ['precision', 'recall', 'fmeasure'], measures):
+                        if g in list(measures[0].keys()):
+                            lines[i] = l + '{:.4f}\t'.format(d_m[g][t])
+                        else:
+                            lines[i] = l + '\t'
+                        i += 1
+
+            for l in lines:
+                out.write(l[:-2] + '\n')
+
+
+    def save_IR_results(self, measures, perfect):
+
+        self.save_TSV_IR(measures, perfect)
+
+        with open(self.results_path, 'a') as out:
+            out.write('IR Results\n')
+            string = '\t{:10}: {:4.2f} | perfect {:10}: {:4.2f}\n'
+            granularities = list(measures[0].keys())
+            for t in self.topn:
+                out.write('\n------------------------ topn: {}--------------------------\n'.format(t))
+                for g in granularities:
+                    out.write('---------------- take first {} {} neighbours ----------------\n'.format(t, g))
+                    for m, d_m, d_p in zip(['precision', 'recall', 'fmeasure'], measures, perfect):
+                        out.write(string.format(m, d_m[g][t], m, d_p[g][t]))
+                    out.write('\n')
+                    
+
+    def fill_TSV(self, space, HITS):
+        self.tsv[space]['HITS'].append(HITS)
+
+
+class ClassifierMTNCI(ChoiMTNCI):
+     
+    def __init__(self, class_number, *args, **kwargs):
+        
+        super().__init__(*args, **kwargs)
+
+        self.classifierLayer =  nn.Linear(kwargs['dims'][-1] + 20, class_number, bias=True).cuda()
+        self.sigmoid = nn.Sigmoid()
+
+
+        self.classification_loss = nn.BCELoss() 
+
+
+    def forward(self, input):
+
+        regression_vectors = super().forward(input)
+
+        shimaoka_vector = self.get_shimaoka_output(input)
+        common_output = self.common_network(shimaoka_vector)
+
+        classifier_input = torch.cat((regression_vectors[0], regression_vectors[1], common_output), dim = 1)
+
+        classifier_ouput = self.sigmoid(self.classifierLayer(classifier_input))
+
+        return regression_vectors, classifier_ouput
+
+    def train_model(self):
+
+        train_length = len(self.datasetManager.Y_train)
+        val_length = len(self.datasetManager.Y_val)
+
+        losses = Prediction(device = self.device).LOSSES
+
+        distributional_prediction_train_manager = self.get_prediction_manager(loss_name=self.losses_name_dict['distributional'])
+        distributional_prediction_val_manager = self.get_prediction_manager(loss_name=self.losses_name_dict['distributional'])
+
+        hyperbolic_prediction_train_manager = self.get_prediction_manager(loss_name=self.losses_name_dict['hyperbolic-train'])
+        
+        hyperbolic_prediction_val_manager = self.get_prediction_manager(loss_name=self.losses_name_dict['hyperbolic-val'])
+
+        hyperbolic_train_metric_manager = self.get_prediction_manager(loss_name=self.metric_name_dict['hyperbolic'])
+        distributional_train_metric_manager = self.get_prediction_manager(loss_name=self.metric_name_dict['distributional'])
+        
+        hyperbolic_val_metric_manager = self.get_prediction_manager(loss_name=self.metric_name_dict['hyperbolic'])
+        distributional_val_metric_manager = self.get_prediction_manager(loss_name=self.metric_name_dict['distributional'])
+
+        if self.weighted:
+
+            train_weights = self.datasetManager.get_weights(label = 'Train')
+            val_weights = self.datasetManager.get_weights(label = 'Val')
+
+            distributional_prediction_train_manager.set_weight(train_weights)
+            hyperbolic_prediction_train_manager.set_weight(train_weights)
+
+            distributional_prediction_val_manager.set_weight(val_weights)
+            hyperbolic_prediction_val_manager.set_weight(val_weights)
+
+            hyperbolic_train_metric_manager.set_weight(train_weights)
+            distributional_train_metric_manager.set_weight(train_weights)
+
+            hyperbolic_val_metric_manager.set_weight(val_weights)
+            distributional_val_metric_manager.set_weight(val_weights)
+
+        for epoch in range(self.epochs):
+            
+            self.datasetManager.get_epoch_data(initialize=True)
+
+            train_loss_SUM = 0
+            val_loss_SUM = 0
+            
+            distributional_train_loss_SUM = 0
+            distributional_val_loss_SUM = 0
+            
+            hyperbolic_train_loss_SUM = 0
+            hyperbolic_val_loss_SUM = 0
+
+            distributional_train_metric_SUM = 0
+            hyperbolic_train_metric_SUM = 0
+            
+            distributional_val_metric_SUM = 0
+            hyperbolic_val_metric_SUM = 0
+            
+            train_weights_sum = 0
+            val_weights_sum = 0
+
+            bar = tqdm(total=self.TIMES * self.datasetManager.get_data_batch_length(dataset='train'))
+            for _ in range(self.TIMES):
+                for batch_iteration in range(self.datasetManager.get_data_batch_length(dataset = 'train')):
+
+                    if random.random() < self.PERC:
+
+                        x, labels, targets, numeric_labels = self.datasetManager.get_epoch_data(dataset='train', batch_iteration = batch_iteration)
+
+                        ######################
+                        ####### TRAIN ########
+                        ######################
+                        # print('xs: {}'.format(x[0].shape))
+                        # print('targets: {}'.format(targets['hyperbolic'].shape))
+                        self.optimizer.zero_grad()
+                        
+                        self.train()
+                        
+                        output, classifier_output = self(x)
+
+                        distributional_prediction_train_manager.set_prediction(predictions = output[0],
+                                                                        true_values = targets['distributional'], 
+                                                                        labels = labels)
+
+                        hyperbolic_prediction_train_manager.set_prediction(predictions = output[1], 
+                                                                    true_values = targets['hyperbolic'],
+                                                                    labels = labels) 
+
+                        distributional_train_metric_manager.set_prediction(predictions = output[0],
+                                                                                        true_values = targets['distributional'], 
+                                                                                        labels = labels)
+
+                        hyperbolic_train_metric_manager.set_prediction(predictions = output[1], 
+                                                                    true_values = targets['hyperbolic'],
+                                                                    labels = labels)                
+
+                        if self.weighted:
+                            distributional_prediction_train_manager.compute_batch_weights()
+                            batch_weights = distributional_prediction_train_manager.get_batch_weights()
+                            train_weights_sum += torch.sum(batch_weights)
+
+                            distributional_prediction_train_manager.set_batch_weights(batch_weights)
+                            hyperbolic_prediction_train_manager.set_batch_weights(batch_weights)
+                            distributional_train_metric_manager.set_batch_weights(batch_weights)
+                            hyperbolic_train_metric_manager.set_batch_weights(batch_weights)
+
+                        distributional_train_loss = distributional_prediction_train_manager.compute_loss()
+                        
+                        hyperbolic_train_loss = hyperbolic_prediction_train_manager.compute_loss()
+                        
+                        distributional_train_loss_SUM += torch.sum(distributional_train_loss * self.llambdas['distributional']).item()
+                        hyperbolic_train_loss_SUM += torch.sum(hyperbolic_train_loss * self.llambdas['hyperbolic']).item()
+                        
+
+                        distributional_train_metric = distributional_train_metric_manager.compute_loss()
+                        hyperbolic_train_metric = hyperbolic_train_metric_manager.compute_loss()
+
+                        distributional_train_metric_SUM += torch.sum(distributional_train_metric).item()
+                        hyperbolic_train_metric_SUM += torch.sum(hyperbolic_train_metric).item()
+
+                        train_loss = self.get_multitask_loss({'distributional': distributional_train_loss, 
+                                                            'hyperbolic': hyperbolic_train_loss})
+                        
+
+                        classifier_loss = self.classification_loss(classifier_output, numeric_labels)
+
+                        train_loss = train_loss + classifier_loss 
+
+                        train_loss_SUM += train_loss.item()
+
+                        train_loss.backward()
+                        self.optimizer.step()
+                    bar.update(1)
+            bar.close()
+
+            with torch.no_grad():
+                self.eval()   
+                classifier_loss_sum = 0
+                bar_val = tqdm(total=self.datasetManager.get_data_batch_length(dataset='val'))
+                # for batch_iteration in range(len(self.datasetManager.valloader)):
+                for batch_iteration in range(self.datasetManager.get_data_batch_length(dataset='val')):
+                    x, labels, targets, numeric_labels = self.datasetManager.get_epoch_data(dataset='val', batch_iteration = batch_iteration)
+
+                    ######################
+                    ######## VAL #########
+                    ######################
+
+                    output, classifier_output = self(x)
+
+                    distributional_prediction_val_manager.set_prediction(predictions = output[0],
+                                                                    true_values = targets['distributional'],
+                                                                    labels = labels)
+
+                    hyperbolic_prediction_val_manager.set_prediction(predictions = output[1], 
+                                                                true_values = targets['hyperbolic'],
+                                                                labels = labels) 
+                    
+                    distributional_val_metric_manager.set_prediction(predictions = output[0],
+                                                                            true_values = targets['distributional'], 
+                                                                            labels = labels)
+
+                    hyperbolic_val_metric_manager.set_prediction(predictions = output[1], 
+                                                                        true_values = targets['hyperbolic'],
+                                                                        labels = labels)                
+
+
+                    if self.weighted:
+                        distributional_prediction_val_manager.compute_batch_weights()
+                        batch_weights = distributional_prediction_val_manager.get_batch_weights()
+                        val_weights_sum += torch.sum(batch_weights)
+
+                        distributional_prediction_val_manager.set_batch_weights(batch_weights)
+                        hyperbolic_prediction_val_manager.set_batch_weights(batch_weights)
+                        distributional_val_metric_manager.set_batch_weights(batch_weights)
+                        hyperbolic_val_metric_manager.set_batch_weights(batch_weights)
+
+
+                    distributional_val_loss = distributional_prediction_val_manager.compute_loss()
+                    hyperbolic_val_loss = hyperbolic_prediction_val_manager.compute_loss()
+
+                    distributional_val_loss_SUM += torch.sum(distributional_val_loss * self.llambdas['distributional']).item()
+                    hyperbolic_val_loss_SUM += torch.sum(hyperbolic_val_loss * (self.llambdas['hyperbolic'])).item()
+                    
+                    distributional_val_metric = distributional_val_metric_manager.compute_loss()
+                    hyperbolic_val_metric = hyperbolic_val_metric_manager.compute_loss()
+
+                    distributional_val_metric_SUM += torch.sum(distributional_val_metric).item()
+                    hyperbolic_val_metric_SUM += torch.sum(hyperbolic_val_metric).item()
+
+                    val_loss = self.get_multitask_loss({'distributional': distributional_val_loss, 
+                                                        'hyperbolic': hyperbolic_val_loss})
+                    
+
+                    classifier_loss = self.classification_loss(classifier_output, numeric_labels) * 500
+
+                    classifier_loss_sum += classifier_loss.item()
+
+
+                    val_loss = val_loss + classifier_loss 
+
+                    val_loss_SUM += val_loss.item()
+
+                    bar_val.update(1)
+
+            bar_val.close()
+            if not self.weighted:
+                train_loss_value = train_loss_SUM/train_length
+                val_loss_value = val_loss_SUM/val_length
+
+                hyperbolic_train_loss_value = hyperbolic_train_loss_SUM/train_length
+                hyperbolic_val_loss_value = hyperbolic_val_loss_SUM/val_length
+
+                distributional_train_loss_value = distributional_train_loss_SUM/train_length
+                distributional_val_loss_value = distributional_val_loss_SUM/val_length
+
+                distributional_train_metric_value = distributional_train_metric_SUM/train_length
+                hyperbolic_train_metric_value = hyperbolic_train_metric_SUM/train_length
+
+                distributional_val_metric_value = distributional_val_metric_SUM/val_length
+                hyperbolic_val_metric_value = hyperbolic_val_metric_SUM/val_length
+
+                classifier_loss_value = classifier_loss_sum/val_length
+
+            else:
+                train_loss_value = train_loss_SUM/train_weights_sum
+                val_loss_value = val_loss_SUM/val_weights_sum
+
+                hyperbolic_train_loss_value = hyperbolic_train_loss_SUM/train_weights_sum
+                hyperbolic_val_loss_value = hyperbolic_val_loss_SUM/val_weights_sum
+
+                distributional_train_loss_value = distributional_train_loss_SUM/train_weights_sum
+                distributional_val_loss_value = distributional_val_loss_SUM/val_weights_sum
+
+                distributional_train_metric_value = distributional_train_metric_SUM/train_weights_sum
+                hyperbolic_train_metric_value = hyperbolic_train_metric_SUM/train_weights_sum
+
+                distributional_val_metric_value = distributional_val_metric_SUM/val_weights_sum
+                hyperbolic_val_metric_value = hyperbolic_val_metric_SUM/val_weights_sum
+                
+
+            self.checkpointManager(val_loss_value, epoch)
+
+            if self.early_stopping:
+                break
+
+            losses_dict = {'Losses/Hyperbolic Losses': {'Train': hyperbolic_train_loss_value, 
+                                                 'Val': hyperbolic_val_loss_value},
+                           'Losses/Distributional Losses':  {'Train': distributional_train_loss_value,
+                                                      'Val': distributional_val_loss_value},
+                           'Losses/MTL-Losses': {'Train': train_loss_value,
+                                          'Val': val_loss_value}
+            }
+
+
+            metric_dict = {'Metrics/Hyperbolic Metrics': {'Train': hyperbolic_train_metric_value, 
+                                                 'Val': hyperbolic_val_metric_value},
+                           'Metrics/Distributional Metrics':  {'Train': distributional_train_metric_value,
+                                                                'Val': distributional_val_metric_value}
+                            }
+            self.log_losses(losses_dict = losses_dict, epoch = epoch + 1)
+
+            self.log_losses(losses_dict=metric_dict, epoch = epoch + 1)
+
+            print('{:^25}'.format('epoch {:^3}/{:^3}'.format(epoch, self.epochs)))
+            print('{:^25}'.format('Train loss: {:.4f}, Val loss: {:.4f}, Min loss: {:.4f} at epoch: {}'.format(train_loss_value, 
+                                                                                                    val_loss_value, 
+                                                                                                    self.min_loss, 
+                                                                                                    self.best_epoch)))
+            print('{:^25}'.format('T_MHD: {:.4f}, V_MHD:{:.4f}'.format(hyperbolic_train_metric_value, hyperbolic_val_metric_value)))
+            print('{:^25}'.format('T_MDD: {:.4f}, V_MDD:{:.4f}'.format(distributional_train_metric_value, distributional_val_metric_value)))
+            print('classifier_loss: {:.4f}'.format(classifier_loss_value))
+
+
+    def type_prediction_on_test(self, topn, test_data, entities, labels):
+
+        checkpoint = torch.load(self.checkpoint_path)
+
+        try:
+            print('loading model checkpoint at epoch {}'.format(checkpoint['epoch']))
+        except:
+            pass
+
+        self.load_state_dict(checkpoint['model_state_dict'])
+
+        self.eval()
+
+        self.topn = topn
+
+        # x = [[], []]
+        class_preds = []
+        i = 0
+        print('... extract prediction on test ...')
+        for i in tqdm(range(len(test_data['data']))):
+            t = test_data['data'][i]
+            pred, class_pred = self(t)
+            # x[0].extend(pred[0].detach().cpu().numpy())
+            # x[1].extend(pred[1].detach().cpu().numpy())
+            class_preds.extend(class_pred.detach().cpu().numpy())
+
+        self.emb = Embedding()            
+        self.emb.set_embedding(self.datasetManager.concept_embeddings['hyperbolic'])
+        self.emb.set_name('hyperbolic')
+            
+
+        self.compute_classifier_prediction(class_preds, labels)
+        
+        # self.compute_prediction(x, labels = labels, entities = entities)
+
+    def compute_classifier_prediction(self, predictions, labels):
+        
+        tot = 0
+        correct = 0
+
+        preds = []
+        for c in predictions:
+            indexes = np.where(c > 0.5)
+            class_preds = self.datasetManager.get_label_from_numeric(indexes)
+            preds.extend(class_preds)
+
+        
+        measures, perfect_measures = self.compute_IR_metrics(predictions = preds, labels_lists = labels)
+
+        self.save_IR_results(measures = measures, perfect = perfect_measures)
+
+
+
+    def compute_IR_metrics(self, predictions, labels_lists, granularities = ['coarse', 'fine', 'ultrafine', 'all']):
+        
+        precision = {g: {t: 0 for t in self.topn} for g in granularities}
+        recall = {g: {t: 0 for t in self.topn} for g in granularities}        
+        
+        precision_values = {g: {t: [] for t in self.topn} for g in granularities}
+        recall_values = {g: {t: [] for t in self.topn} for g in granularities}
+        
+        perfect_score_precision = {g: {t: [] for t in self.topn} for g in granularities}
+        perfect_score_recall = {g: {t: [] for t in self.topn} for g in granularities}
+        perfect_score_fmeasure = {g: {t: [] for t in self.topn} for g in granularities}
+
+        fmeasure = {g: {t: 0 for t in self.topn} for g in granularities}
+
+        bar = tqdm(total=len(predictions))
+
+        i = 0
+        for pred, labels in zip(predictions, labels_lists):
+            bar.set_description('getting IR results')
+            for g in granularities:
+                # neigh = self.emb.get_neigh(vector = pred, top = max(self.topn), include=g)
+                
+                if g != 'all':
+                    filtered_labels = self.filter_labels(labels=labels, gran = g)
+                else:
+                    filtered_labels = labels
+                if filtered_labels:
+                    for t in self.topn:
+
+                        new_neigh = pred
+                        corrects = 0
+                        for n in new_neigh:
+                            if n in filtered_labels:
+                                corrects += 1
+                        if new_neigh:
+                            prec = corrects / len(new_neigh)
+                        else:
+                            prec = 0
+
+                        if len(filtered_labels) > t:
+                            perfect_score_precision[g][t].append(1)
+                            perfect_score_recall[g][t].append(t/len(filtered_labels))
+                        else:
+                            perfect_score_precision[g][t].append(len(filtered_labels)/t)
+                            perfect_score_recall[g][t].append(1)
+
+                        rec = corrects / len(filtered_labels)
+
+                        precision_values[g][t].append(prec)
+                        recall_values[g][t].append(rec)
+                        
+                        # print('pred: {}'.format(pred))
+                        # print('labels: {}'.format(labels))
+                        # print('filtered labels: {}'.format(filtered_labels))
+                        # print('prec: {}'.format(prec))
+                        # print('rec: {}'.format(rec))
+                        # print('recalls: {}'.format(np.mean(recall_values[g][t])))
+                        # print('------------------')
+            bar.update(1)
+
+            # if i > 9:
+                # break
+
+            i += 1
+        
+        bar.close()
+        for g in granularities:
+            for t in self.topn:
+                precision[g][t] = np.mean(precision_values[g][t])
+                recall[g][t] = np.mean(recall_values[g][t])
+                if not recall[g][t] and recall[g][t] != 0:
+                    recall[g][t] = 0
+
+                fmeasure[g][t] = self.f1(p=precision[g][t], r=recall[g][t])
+
+                perfect_score_precision[g][t] = np.mean(perfect_score_precision[g][t])
+                perfect_score_recall[g][t] = np.mean(perfect_score_recall[g][t])
+                perfect_score_fmeasure[g][t] = self.f1(p=perfect_score_precision[g][t], r=perfect_score_recall[g][t])
+
+        print('recall: {}'.format(recall))
+
+        return [precision, recall, fmeasure], [perfect_score_precision, perfect_score_recall, perfect_score_fmeasure]

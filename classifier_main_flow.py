@@ -1,7 +1,7 @@
-from MTNCI.MTNCI import ChoiMTNCI
+from MTNCI.MTNCI import ClassifierMTNCI
 # from MTNCI import LopezLike as ShimaokaMTNCI
 import torch
-from MTNCI.DatasetManager import ChoiDatasetManager as DatasetManager
+from MTNCI.DatasetManager import ClassifierDataManager as DatasetManager
 from geoopt.optim import RiemannianAdam
 from tqdm import tqdm
 from preprocessing.utils import LOSSES
@@ -32,14 +32,14 @@ class argClass():
         self.context_dropout = 0.5
 
 
-# lopez_data = torch.load('../figet-hyperbolic-space/data/prep/ontonotes/data.pt')
-# word2vec = torch.load('../figet-hyperbolic-space/data/prep/ontonotes/word2vec.pt')
+lopez_data = torch.load('../figet-hyperbolic-space/data/prep/ontonotes/data.pt')
+word2vec = torch.load('../figet-hyperbolic-space/data/prep/ontonotes/word2vec.pt')
 
 # lopez_data = torch.load('../figet-hyperbolic-space/data/prep/onto_no_coarse/data.pt')
 # word2vec = torch.load('../figet-hyperbolic-space/data/prep/onto_no_coarse/word2vec.pt')
 
-lopez_data = torch.load('../figet-hyperbolic-space/data/prep/onto-ultra-only/data.pt')
-word2vec = torch.load('../figet-hyperbolic-space/data/prep/onto-ultra-only/word2vec.pt')
+# lopez_data = torch.load('../figet-hyperbolic-space/data/prep/onto-ultra-only/data.pt')
+# word2vec = torch.load('../figet-hyperbolic-space/data/prep/onto-ultra-only/word2vec.pt')
 
 # lopez_data = torch.load('../figet-hyperbolic-space/data/prep/crowd-wordnet/data.pt')
 # word2vec = torch.load('../figet-hyperbolic-space/data/prep/crowd-wordnet/word2vec.pt')
@@ -78,11 +78,11 @@ out_spec = [{'manifold':'euclid', 'dim':[256, 10]},
             # {'manifold':'poincare', 'dim':[128, 128, 10]}]
             {'manifold':'poincare', 'dim':[512, 512, 256, 10]}]
 
-NAME = 'ontonotes_ultra_only_average'
+NAME = 'classifier_prova'
 # NAME = 'wordnet_ultra_only_average_100'
 # NAME = 'prova'
 
-models = 5
+models = 8
 
 
 regularized = False
@@ -98,8 +98,8 @@ lr = 1e-3
 
 llambda = 0.5
 weighted = False
-epochs = 50
-patience = 40
+epochs = 500
+patience = 25
 
 times = 5
 perc = 0.1
@@ -139,7 +139,7 @@ if __name__ == "__main__":
         return dataset
 
     print('load dataset')
-    train = get_dataset(lopez_data, 1024, "train")
+    train = get_dataset(lopez_data, 2048, "train")
     val = get_dataset(lopez_data, 16, "dev")
     test = get_dataset(lopez_data, 256, "test")
     print('transform dataset')
@@ -148,6 +148,9 @@ if __name__ == "__main__":
     val_labels = [[lopez_data['vocabs']['type'].idx2label[label.item()] for label in labels] for entry in tqdm(val) for labels in entry[5]]
     test_labels = [[lopez_data['vocabs']['type'].idx2label[label.item()] for label in labels] for entry in tqdm(test) for labels in entry[5]]
     
+    all_labels = set([l for lab in train_labels for l in lab])
+    
+
     # for t in val:
     #     print(t[0].shape)
 
@@ -160,6 +163,8 @@ if __name__ == "__main__":
     #                 entity_label += lopez_data['vocabs']['token'].idx2label[entity.item()] + ' '
     #         train_entities.append(entity_label)
     
+    class_number = len(all_labels)
+
     test_entities = []
     for entry in tqdm(test): 
         for entities in entry[3]:
@@ -183,11 +188,14 @@ if __name__ == "__main__":
     datasetManager.set_batched_data(train_data, val_data, test_data, lopez_data['vocabs']['type'])
     
     t = time.time()
-    for i in range(1, 2 + models):
-        model = ChoiMTNCI(args, vocabs, device, 
-                        input_d=SHIMAOKA_OUT,
-                        out_spec = out_spec,
-                        dims = dims)
+    for i in range(1, 1 + models):
+        model = ClassifierMTNCI(class_number = class_number,
+                            argss = args, 
+                            vocabs = vocabs, 
+                            device = device, 
+                            input_d=SHIMAOKA_OUT,
+                            out_spec = out_spec,
+                            dims = dims)
         
         model.init_params(word2vec=word2vec)
 
@@ -226,7 +234,7 @@ if __name__ == "__main__":
         print('... training model ... ')
         model.train_model()
 
-        topn = [1, 3, 5]
+        topn = [1]
 
         with open(TSV_path, 'a') as out:
             out.write('-------------------------------------')

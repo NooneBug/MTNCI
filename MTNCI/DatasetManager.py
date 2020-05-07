@@ -150,6 +150,8 @@ class DatasetManager():
             self.concept_embeddings = {}
             
             self.concept_embeddings['hyperbolic'] = self.load_nickel(CONCEPT_EMBEDDING_PATHS[1])
+            
+        self.concept_embeddings['hyperbolic'] = {k.strip(): v for k, v in self.concept_embeddings['hyperbolic'].items()}
 
         self.concept_embeddings['distributional'] = load_data_with_pickle(CONCEPT_EMBEDDING_PATHS[0])
         
@@ -166,7 +168,7 @@ class DatasetManager():
         embeddings = emb['embeddings']
         objects = emb['objects']
 
-        return {k: embeddings[objects.index(k)].numpy() for k in objects}
+        return {k: embeddings[objects.index(k)].cpu().numpy() for k in objects}
 
     def split_data_by_unique_entities(self, test_sizes = {'test' : 0.1, 'val': 0.1},
                                             exclude_min_threshold = 10):
@@ -417,7 +419,7 @@ class DatasetManager():
         '''
         computes a map and an inverse map which will be used to map labels to numbers (requested by pytorch)
         '''
-        self.numeric_label_map = {y: x for x, y in enumerate(set(self.Y_train))}
+        self.numeric_label_map = {y: x for x, y in enumerate(set(self.Y_train).union(set(self.Y_val).union(set(self.Y_test))))}
         self.inverse_numeric_label_map = {v:k for k,v in self.numeric_label_map.items()}
 
     def create_numeric_dataset(self):
@@ -445,18 +447,20 @@ class DatasetManager():
         aligned_y_test = {k:[] for k in self.concept_embeddings.keys()}
         aligned_y_val = {k:[] for k in self.concept_embeddings.keys()}
 
+
         for label in self.Y_train:
             for k, emb in self.concept_embeddings.items():
-                aligned_y_train[k].append(emb[label])
+                aligned_y_train[k].append(self.get_vector_from_embedding(emb, label))
         
         for label in self.Y_test:
             for k, emb in self.concept_embeddings.items():
-                aligned_y_test[k].append(emb[label])
+                aligned_y_test[k].append(self.get_vector_from_embedding(emb, label))
 
         for label in self.Y_val:
             for k, emb in self.concept_embeddings.items():
-                aligned_y_val[k].append(emb[label])
-        
+                vec = self.get_vector_from_embedding(emb, label)
+                
+                aligned_y_val[k].append(self.get_vector_from_embedding(emb, label))
         
         for k, dataSET in aligned_y_train.items():
             aligned_y_train[k] = np.array(dataSET)
@@ -475,6 +479,13 @@ class DatasetManager():
             return aligned_y_train, aligned_y_test, aligned_y_val
 
     
+    def get_vector_from_embedding(self, embedding, label):
+        try:
+            vec = embedding[label]
+        except:
+            vec = random.sample(list(embedding.values()), 1)[0]
+        return vec
+
     def create_dataloaders(self, batch_sizes = {'train': 512, 'test': 512, 'val': 512}):
         '''
         generates dataloaders and save on self.
@@ -627,11 +638,12 @@ class ShimaokaMTNCIDatasetManager(DatasetManager):
             
 
     def set_batched_data(self, train, val, test):
+
+
         self.Y_train = train['labels']
         self.Y_val = val['labels']
         self.Y_test = test['labels']
         
-
         self.train_batched_datas = train['data']
         self.val_batched_datas = val['data']
         self.test_batched_datas = test['data']
@@ -641,12 +653,14 @@ class ShimaokaMTNCIDatasetManager(DatasetManager):
         self.val_batched_labels = self.batch_labels(val)
         self.train_batched_labels = self.batch_labels(test)
 
+
         self.create_numeric_dataset()
 
         self.Y_numeric_train = torch.tensor(self.Y_numeric_train, device = self.device)
         self.Y_numeric_val = torch.tensor(self.Y_numeric_val, device = self.device)
         self.Y_numeric_test = torch.tensor(self.Y_numeric_test, device = self.device)
         
+
         n_train = {'data': train['data'], 'labels' : self.Y_numeric_train}
         n_val = {'data': val['data'], 'labels' : self.Y_numeric_val}
         n_test = {'data': test['data'], 'labels' : self.Y_numeric_test}
@@ -689,7 +703,7 @@ class ShimaokaMTNCIDatasetManager(DatasetManager):
 
 class ChoiDatasetManager(ShimaokaMTNCIDatasetManager):
 
-    def load_concept_embeddings(self, CONCEPT_EMBEDDING_PATHS, data):
+    def load_concept_embeddings(self, CONCEPT_EMBEDDING_PATHS, data, nickel = True):
         '''
         load the concept embedding and transform that in dicts,
         for example: 
@@ -709,15 +723,23 @@ class ChoiDatasetManager(ShimaokaMTNCIDatasetManager):
 
         self.concept_embeddings = {}
         self.concept_embeddings['hyperbolic'] = self.load_nickel(CONCEPT_EMBEDDING_PATHS[1])
-        self.concept_embeddings['distributional'] = self.load_nickel(CONCEPT_EMBEDDING_PATHS[1])
+        self.concept_embeddings['hyperbolic'] = {k.strip(): v for k, v in self.concept_embeddings['hyperbolic'].items()}
+        if nickel:
+            self.concept_embeddings['distributional'] = self.load_nickel(CONCEPT_EMBEDDING_PATHS[0])
+        if not nickel:
+            self.concept_embeddings['distributional'] = load_data_with_pickle(CONCEPT_EMBEDDING_PATHS[0])
         
         self.print_loaded()
 
-    def set_batched_data(self, train, val, test):
+    def set_batched_data(self, train, val, test, type_vocab):
+        
+
+        print('create all labels lists')
         self.Y_train = train['labels']
         self.Y_val = val['labels']
         self.Y_test = test['labels']
 
+        # print('Y_train: {}'.format(self.Y_train))
 
         self.all_labels = set()
 
@@ -726,42 +748,122 @@ class ChoiDatasetManager(ShimaokaMTNCIDatasetManager):
                 for label in y:
                     self.all_labels.add(label)
         
-        self.train_batched_datas = train['data']
-        self.val_batched_datas = val['data']
-        self.test_batched_datas = test['data']
-
-        self.train_batched_labels = self.batch_labels(train)
-        self.val_batched_labels = self.batch_labels(val)
-        self.train_batched_labels = self.batch_labels(test)
-
+        print('create numeric datasets')
         self.create_numeric_dataset()
-
 
         self.Y_numeric_train = torch.tensor(self.Y_numeric_train, device = self.device)
         self.Y_numeric_val = torch.tensor(self.Y_numeric_val, device = self.device)
         self.Y_numeric_test = torch.tensor(self.Y_numeric_test, device = self.device)
+        # print('Y_numeric_train: {}'.format(self.Y_numeric_train))
         
+
+        print('create batched datasets')
+        self.train_batched_datas = train['data']
+        self.val_batched_datas = val['data']
+        self.test_batched_datas = test['data']
+
+        # print('train_batched_datas: {}'.format(self.train_batched_datas))
+
+
+        self.train_batched_labels = self.translate_batch_labels(train['data'], type_vocab)
+        self.val_batched_labels = self.translate_batch_labels(val['data'], type_vocab)
+        self.test_batched_labels = self.translate_batch_labels(test['data'], type_vocab)
+
+        # print('train_batched_labels: {}'.format(self.train_batched_labels))
+
+
         n_train = {'data': train['data'], 'labels' : self.Y_numeric_train}
         n_val = {'data': val['data'], 'labels' : self.Y_numeric_val}
         n_test = {'data': test['data'], 'labels' : self.Y_numeric_test}
 
-        self.batched_Y_train = self.batch_labels(n_train)
-        self.batched_Y_val = self.batch_labels(n_val)
-        self.batched_Y_test = self.batch_labels(n_test)
+        # self.batched_Y_train = self.batch_labels(n_train)
+        self.batched_Y_train = self.de_translate_batch_labels(self.train_batched_labels)
+        # self.batched_Y_val = self.batch_labels(n_val)
+        self.batched_Y_val = self.de_translate_batch_labels(self.val_batched_labels)
+        # self.batched_Y_test = self.batch_labels(n_test)
+        self.batched_Y_test = self.de_translate_batch_labels(self.test_batched_labels)
 
-        self.create_aligned_dataset()
+        # print('batched_Y_train: {}'.format(self.batched_Y_train))
+        print('create aligned datasets')
+        self.create_aligned_dataset(in_place=True)
 
-        self.aligned_y_train = {k: torch.tensor(v, device=self.device) for k, v in self.aligned_y_train.items()}
-        self.aligned_y_val = {k: torch.tensor(v, device=self.device) for k, v in self.aligned_y_val.items()}
-        self.aligned_y_test = {k: torch.tensor(v, device=self.device) for k, v in self.aligned_y_test.items()}
+        # print('aligned_y_train: {}'.format({k:v.shape for k, v in self.aligned_y_train.items()}))
+        # print('batched_aligned_train: {}'.format({k:v.shape for k, v in self.batched_aligned_train.items()}))
 
-        n_train = {'data': train['data'], 'labels' : self.aligned_y_train}
-        n_val = {'data': val['data'], 'labels' : self.aligned_y_val}
-        n_test = {'data': test['data'], 'labels' : self.aligned_y_test}
+        # self.aligned_y_train = {k: torch.tensor(v, device=self.device) for k, v in self.aligned_y_train.items()}
+        # self.aligned_y_val = {k: torch.tensor(v, device=self.device) for k, v in self.aligned_y_val.items()}
+        # self.aligned_y_test = {k: torch.tensor(v, device=self.device) for k, v in self.aligned_y_test.items()}
+
+        # n_train = {'data': train['data'], 'labels' : self.aligned_y_train}
+        # n_val = {'data': val['data'], 'labels' : self.aligned_y_val}
+        # n_test = {'data': test['data'], 'labels' : self.aligned_y_test}
         
-        self.batched_aligned_train = self.batch_labels(n_train, lisst=False)
-        self.batched_aligned_val = self.batch_labels(n_val, lisst=False)
-        self.batched_aligned_test = self.batch_labels(n_test, lisst=False)
+        # self.batched_aligned_train = self.batch_labels(n_train, lisst=False)
+        # self.batched_aligned_train = self.batch_multilabels(n_train)
+        # self.batched_aligned_val = self.batch_labels(n_val, lisst=False)
+        # self.batched_aligned_val = self.batch_multilabels(n_val)
+        # self.batched_aligned_test = self.batch_labels(n_test, lisst=False)
+        # self.batched_aligned_test = self.batch_multilabels(n_test)
+
+        
+    def translate_batch_labels(self, data, t_vocab):
+        batches = []
+        for e in data:
+            batched_labels = []
+            for labels in e[5]:
+                batched_labels.append([t_vocab.idx2label[l.item()] for l in labels])
+            batches.append(batched_labels)
+        return batches
+
+    def de_translate_batch_labels(self, data):
+        de_transalted = []
+        for batch in data:
+            batched_labels = self.get_numeric_label(batch)
+            de_transalted.append(batched_labels)
+        return de_transalted
+    
+    def batch_multilabels(self, data):
+        ret = {}
+        chunks = len(data['data'])
+        print('chunks: {}'.format(chunks))
+        for k, v in data['labels'].items():
+            ret[k] = torch.chunk(v, chunks)
+        return ret
+
+    def batch_labels(self, data, lisst = True):
+        if lisst:
+            batched = []
+        else:
+            batched = {}
+        if lisst:
+            length = len(data['labels'])
+        else:
+            length = len(data['labels']['distributional'])
+
+        offset = len(data['data'][0][0])
+
+
+        for i in range(0, length, offset):
+            if lisst:
+                batched.append(data['labels'][i: i + offset])
+            else:
+                # batched.append([{'distributional': data['labels']['distributional'][i: i + offset],
+                #                 'hyperbolic': data['labels']['hyperbolic'][i: i + offset]}])
+
+                if i !=0:
+                    to_append = list(data['labels']['distributional'][i:i+offset].cpu().numpy())
+
+                    batched['distributional'].append(to_append)
+
+                    to_append = list(data['labels']['hyperbolic'][i:i+offset].cpu().numpy())
+
+                    batched['hyperbolic'].append(to_append)
+
+                else:
+                    batched['distributional'] = list([data['labels']['distributional'][i:i+offset].cpu().numpy()])
+                    batched['hyperbolic'] = list([data['labels']['hyperbolic'][i:i+offset].cpu().numpy()])
+        return batched
+
 
     def create_numeric_dataset(self):
         '''
@@ -769,8 +871,14 @@ class ChoiDatasetManager(ShimaokaMTNCIDatasetManager):
         '''
         self.compute_numeric_labels()
 
-        self.max_label_input = max([len(y) for y in self.Y_train])
+        max_train = max([len(y) for y in self.Y_train])
 
+        max_val = max([len(y) for y in self.Y_val])
+
+        max_test = max([len(y) for y in self.Y_test])
+        
+        self.max_label_input = max([max_train, max_val, max_test])
+        
         self.Y_numeric_train = self.get_numeric_label(self.Y_train)
         self.Y_numeric_test = self.get_numeric_label(self.Y_test)
         self.Y_numeric_val = self.get_numeric_label(self.Y_val)
@@ -795,6 +903,9 @@ class ChoiDatasetManager(ShimaokaMTNCIDatasetManager):
             numeric_dataset.append(numeric_labels)
 
         return numeric_dataset
+
+    def get_label_from_numeric(self, labels):
+        return [[self.inverse_numeric_label_map[l] for l in label] for label in labels]
     
     def create_aligned_dataset(self, in_place = True):
         '''
@@ -808,47 +919,147 @@ class ChoiDatasetManager(ShimaokaMTNCIDatasetManager):
             if in_place == False returns the aligned train, test and validation dataset
         '''
 
-        aligned_y_train = {k:[] for k in self.concept_embeddings.keys()}
-        aligned_y_test = {k:[] for k in self.concept_embeddings.keys()}
-        aligned_y_val = {k:[] for k in self.concept_embeddings.keys()}
+        print('aligned')
+        aligned_y_train = self.get_vectors_given_labels(data=self.Y_train)
+        aligned_y_val = self.get_vectors_given_labels(data=self.Y_val)
+        aligned_y_test = self.get_vectors_given_labels(data=self.Y_test)
 
-        for label in self.Y_train:
-            for k, emb in self.concept_embeddings.items():
-                aligned_y_train[k].append(self.get_vectors_from_embedding(embedding = emb, labels = label))
-        
-        for label in self.Y_test:
-            for k, emb in self.concept_embeddings.items():
-                aligned_y_test[k].append(self.get_vectors_from_embedding(embedding = emb, labels = label))
-
-        for label in self.Y_val:
-            for k, emb in self.concept_embeddings.items():
-                aligned_y_val[k].append(self.get_vectors_from_embedding(embedding = emb, labels = label))
-        
-
-        for k, dataSET in aligned_y_train.items():
-            aligned_y_train[k] = np.array(dataSET)
-        
-        for k, dataSET in aligned_y_test.items():
-            aligned_y_test[k] = np.array(dataSET)
-        
-        for k, dataSET in aligned_y_val.items():
-            aligned_y_val[k] = np.array(dataSET)
-        
+        print('batched aligned')
+        batched_aligned_train = self.get_vectors_given_batches(data = self.train_batched_labels)
+        batched_aligned_val = self.get_vectors_given_batches(data = self.val_batched_labels)
+        batched_aligned_test = self.get_vectors_given_batches(data = self.test_batched_labels)
 
         if in_place:
             self.aligned_y_train = aligned_y_train
             self.aligned_y_test = aligned_y_test
             self.aligned_y_val = aligned_y_val
+            self.batched_aligned_train = batched_aligned_train
+            self.batched_aligned_val = batched_aligned_val
+            self.batched_aligned_test = batched_aligned_test
         else:
             return aligned_y_train, aligned_y_test, aligned_y_val
 
+    def get_vectors_given_labels(self, data):
+        aligned_y = {k:[] for k in self.concept_embeddings.keys()}
+        for label in tqdm(data):
+            for k, emb in self.concept_embeddings.items():
+                aligned_y[k].append(self.get_vectors_from_embedding(embedding = emb, labels = label))
+        
+        for k, dataSET in aligned_y.items():
+            aligned_y[k] = np.array(dataSET)
+        return aligned_y
+
+    def get_vectors_given_batches(self, data):
+        batches = {k:[] for k in self.concept_embeddings.keys()}
+        for batch in tqdm(data):
+            for k, emb in self.concept_embeddings.items():
+                aligned_batched = []
+                for ys in batch:
+                    aligned_batched.append(self.get_vectors_from_embedding(embedding=emb, labels=ys))
+                batches[k].append(np.array(aligned_batched))
+
+        for k, dataSET in batches.items():
+            batches[k] = np.array(dataSET)
+        return batches
+
+
+
+        
     def get_vectors_from_embedding(self, embedding, labels):
         vectors = []
         for l in labels:
-            vectors.append(embedding[l])
+            try:
+                vectors.append(embedding[l])
+            except:
+                pass
 
         i = 0
+        
+        vec_len = len(vectors)
+
         while len(vectors) < self.max_label_input:
-            vectors.append(vectors[i % len(labels)])
-            i += 1
+            if vec_len != 0:
+                vectors.append(vectors[i % vec_len])
+                i += 1
+            else:
+                values = list(embedding.values())
+
+                index = len(values) 
+                while not index < len(values):
+                    index = int(random.random() * len(values))
+
+                vectors.append(values[index])
+
         return vectors
+
+    def get_epoch_data(self, dataset=None, batch_iteration = 0, initialize = False):
+        if initialize:
+            pass
+        else:
+            if dataset == 'train':
+                x = self.train_batched_datas[batch_iteration]
+                labels = self.batched_Y_train[batch_iteration]
+                # for batch in self.batched_aligned_train['hyperbolic']:
+                #     print(batch.shape)
+                targets = {'distributional': self.batched_aligned_train['distributional'][batch_iteration],
+                            'hyperbolic': self.batched_aligned_train['hyperbolic'][batch_iteration]}
+
+            elif dataset == 'val':
+                x = self.val_batched_datas[batch_iteration]
+                labels = self.batched_Y_val[batch_iteration]
+                targets = {'distributional': self.batched_aligned_val['distributional'][batch_iteration],
+                            'hyperbolic': self.batched_aligned_val['hyperbolic'][batch_iteration]}
+                
+            else:
+                raise Exception('please pass a valid dataset name') from e
+            targets = {k:torch.tensor(v, device=self.device) for k, v in targets.items()}
+            return x, labels, targets
+
+    def get_data_batch_length(self, dataset):
+        if dataset == 'train':
+            return len(self.train_batched_datas)
+        elif dataset == 'val':
+            return len(self.val_batched_datas)
+        else:
+            raise Exception('please pass a valid dataset name') from e
+
+
+class ClassifierDataManager(ChoiDatasetManager):
+    def get_epoch_data(self, dataset=None, batch_iteration = 0, initialize = False):
+        if initialize:
+            pass
+        else:
+            if dataset == 'train':
+                x = self.train_batched_datas[batch_iteration]
+                labels = self.batched_Y_train[batch_iteration]
+                # for batch in self.batched_aligned_train['hyperbolic']:
+                #     print(batch.shape)
+                targets = {'distributional': self.batched_aligned_train['distributional'][batch_iteration],
+                            'hyperbolic': self.batched_aligned_train['hyperbolic'][batch_iteration]}
+
+            elif dataset == 'val':
+                x = self.val_batched_datas[batch_iteration]
+                labels = self.batched_Y_val[batch_iteration]
+                targets = {'distributional': self.batched_aligned_val['distributional'][batch_iteration],
+                            'hyperbolic': self.batched_aligned_val['hyperbolic'][batch_iteration]}
+                
+            else:
+                raise Exception('please pass a valid dataset name') from e
+
+            # numeric_labels = self.get_numeric_label(labels)
+            targets = {k:torch.tensor(v, device=self.device) for k, v in targets.items()}
+
+            BCE_tensor = []
+            for lab in labels:
+                BCE_vector = []
+                for i in range(0, 81):
+                    if i in lab:
+                        BCE_vector.append(1.)
+                    else:
+                        BCE_vector.append(0.)
+                BCE_tensor.append(BCE_vector)
+                    
+
+
+
+            return x, labels, targets, torch.tensor(BCE_tensor).cuda()

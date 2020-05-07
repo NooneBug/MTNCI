@@ -64,10 +64,13 @@ def euclidean_similarity(*args):
 
 
 LOSSES = {'cosine_dissimilarity': 'COSD',
-                       'hyperbolic_distance': 'HYPD',
-                       'normalized_hyperbolic_distance': 'NHYPD',
-                       'regularized_hyperbolic_distance': 'RHYPD',
-                       'hyperboloid_distance' : 'LORENTZD',
-                       'multilabel_Minimum_Poincare': 'HMML',
-                       'multilabel_Minimum_cosine': 'DMML'
+            'hyperbolic_distance': 'HYPD',
+            'normalized_hyperbolic_distance': 'NHYPD',
+            'regularized_hyperbolic_distance': 'RHYPD',
+            'hyperboloid_distance' : 'LORENTZD',
+            'multilabel_Minimum_Normalized_Poincare': 'NHMML',
+            'multilabel_Minimum_Poincare': 'HMML',
+            'multilabel_Minimum_Cosine': 'DMML',
+            'multilabel_Average_Poincare': 'HMAL',
+            'multilabel_Average_Cosine': 'DMAL', 
         }
