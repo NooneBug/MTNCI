@@ -29,7 +29,7 @@ class MTNCIDataset(Dataset):
     This class defines the dataloader for MTNCI
     '''
 
-    def __init__(self, vector_list, label_list, target_list, device):
+    def __init__(self, vector_list, label_list, target_list, one_hot_list, device):
         '''
         set the values for the dataloader
 
@@ -43,6 +43,7 @@ class MTNCIDataset(Dataset):
         self.X = torch.tensor(vector_list, device = device)
         self.labels = torch.tensor(label_list, device = device)
         self.target_list = {k: torch.tensor(x, dtype = torch.float64, device = device) for k, x in target_list.items()}
+        self.one_hot_list = torch.tensor(one_hot_list, device=device)
         
     def __getitem__(self, index):
         '''
@@ -55,7 +56,8 @@ class MTNCIDataset(Dataset):
         '''
         return (self.X[index], 
                 self.labels[index],
-                {k:x[index] for k, x in self.target_list.items()}
+                {k:x[index] for k, x in self.target_list.items()},
+                self.one_hot_list[index]
             )
 
     def __len__(self):
@@ -150,6 +152,7 @@ class DatasetManager():
             self.concept_embeddings = {}
             
             self.concept_embeddings['hyperbolic'] = self.load_nickel(CONCEPT_EMBEDDING_PATHS[1])
+            # self.concept_embeddings['hyperbolic'] = self.load_nickel2(CONCEPT_EMBEDDING_PATHS[1])
             
         self.concept_embeddings['hyperbolic'] = {k.strip(): v for k, v in self.concept_embeddings['hyperbolic'].items()}
 
@@ -164,11 +167,15 @@ class DatasetManager():
     
     def load_nickel(self, path):
         emb = torch.load(path)
-
+        # print(emb)
         embeddings = emb['embeddings']
         objects = emb['objects']
 
         return {k: embeddings[objects.index(k)].cpu().numpy() for k in objects}
+
+    def load_nickel2(self, path):
+        emb = torch.load(path)
+        return {k: v.cpu().numpy() for k, v in emb.items()}
 
     def split_data_by_unique_entities(self, test_sizes = {'test' : 0.1, 'val': 0.1},
                                             exclude_min_threshold = 10):
@@ -486,6 +493,28 @@ class DatasetManager():
             vec = random.sample(list(embedding.values()), 1)[0]
         return vec
 
+    def get_one_hot_labels(self, dataset):
+        if dataset == 'train':
+            d = self.Y_numeric_train
+        elif dataset == 'test':
+            d = self.Y_numeric_test
+        else:
+            d = self.Y_numeric_val
+        
+        t = []
+        for l in d:
+            BCE_vector = []
+            for i in range(0, self.get_concept_number()):
+                if i == l:
+                    BCE_vector.append(1.)
+                else:
+                    BCE_vector.append(0.)
+            t.append(BCE_vector)
+        return t
+
+    def get_concept_number(self):
+        return max(self.Y_numeric_train)
+            
     def create_dataloaders(self, batch_sizes = {'train': 512, 'test': 512, 'val': 512}):
         '''
         generates dataloaders and save on self.
@@ -494,6 +523,7 @@ class DatasetManager():
         trainset = MTNCIDataset(self.X_train,
                                 self.Y_numeric_train,
                                 self.aligned_y_train,
+                                self.get_one_hot_labels('train'),
                                 device = self.device) 
 
         self.trainloader = DataLoader(trainset, batch_size=batch_sizes['train'], shuffle=True)
@@ -501,12 +531,14 @@ class DatasetManager():
         testset = MTNCIDataset(self.X_test,
                                self.Y_numeric_test,
                                self.aligned_y_test,
+                               self.get_one_hot_labels('test'),
                                device = self.device) 
         self.testloader = DataLoader(testset, batch_size=batch_sizes['test'], shuffle=False)
 
         valset = MTNCIDataset(self.X_val,
                               self.Y_numeric_val,
                               self.aligned_y_val,
+                              self.get_one_hot_labels('val'),
                               device = self.device)
         self.valloader = DataLoader(valset, batch_size=batch_sizes['val'], shuffle=True)   
 
@@ -591,7 +623,7 @@ class DatasetManager():
             return next(self.val_it)
         else:
             raise Exception('please pass a valid dataset name') from e
-    
+
     def get_data_batch_length(self, dataset):
         if dataset == 'train':
             return len(self.trainloader)
@@ -634,7 +666,25 @@ class ShimaokaMTNCIDatasetManager(DatasetManager):
             else:
                 raise Exception('please pass a valid dataset name') from e
             
+            # BCE_tensor = []
+            # for lab in labels:
+            #     BCE_vector = []
+            #     for i in range(0, self.get_concept_number()):
+            #         if i in lab:
+            #             BCE_vector.append(1.)
+            #         else:
+            #             BCE_vector.append(0.)
+            #     BCE_tensor.append(BCE_vector)
+                    
+            # return x, labels, targets, torch.tensor(BCE_tensor).cuda()
             return x, labels, targets
+
+    def get_concept_number(self):
+        return self.concept_number
+        # return max(len(x) for x in [self.concept_embeddings['distributional'], self.concept_embeddings['hyperbolic']])
+
+    def set_concept_number(self, concept_number):
+        self.concept_number = concept_number
             
 
     def set_batched_data(self, train, val, test):
@@ -723,6 +773,7 @@ class ChoiDatasetManager(ShimaokaMTNCIDatasetManager):
 
         self.concept_embeddings = {}
         self.concept_embeddings['hyperbolic'] = self.load_nickel(CONCEPT_EMBEDDING_PATHS[1])
+        # self.concept_embeddings['hyperbolic'] = self.load_nickel2(CONCEPT_EMBEDDING_PATHS[1])
         self.concept_embeddings['hyperbolic'] = {k.strip(): v for k, v in self.concept_embeddings['hyperbolic'].items()}
         if nickel:
             self.concept_embeddings['distributional'] = self.load_nickel(CONCEPT_EMBEDDING_PATHS[0])
@@ -945,7 +996,13 @@ class ChoiDatasetManager(ShimaokaMTNCIDatasetManager):
             for k, emb in self.concept_embeddings.items():
                 aligned_y[k].append(self.get_vectors_from_embedding(embedding = emb, labels = label))
         
+
         for k, dataSET in aligned_y.items():
+            # print(dataSET[0])
+            # print(dataSET[10000])
+            # print(dataSET[100])
+            # print(dataSET[1000])
+
             aligned_y[k] = np.array(dataSET)
         return aligned_y
 
@@ -989,8 +1046,9 @@ class ChoiDatasetManager(ShimaokaMTNCIDatasetManager):
                     index = int(random.random() * len(values))
 
                 vectors.append(values[index])
+        # print(vectors)
 
-        return vectors
+        return np.array(vectors)
 
     def get_epoch_data(self, dataset=None, batch_iteration = 0, initialize = False):
         if initialize:
@@ -1052,14 +1110,18 @@ class ClassifierDataManager(ChoiDatasetManager):
             BCE_tensor = []
             for lab in labels:
                 BCE_vector = []
-                for i in range(0, 81):
+                for i in range(0, self.get_concept_number()):
                     if i in lab:
                         BCE_vector.append(1.)
                     else:
                         BCE_vector.append(0.)
                 BCE_tensor.append(BCE_vector)
-                    
-
-
 
             return x, labels, targets, torch.tensor(BCE_tensor).cuda()
+
+    def get_concept_number(self):
+        return self.concept_number
+        # return max(len(x) for x in [self.concept_embeddings['distributional'], self.concept_embeddings['hyperbolic']])
+
+    def set_concept_number(self, concept_number):
+        self.concept_number = concept_number

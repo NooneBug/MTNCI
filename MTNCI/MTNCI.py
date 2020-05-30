@@ -138,7 +138,7 @@ class MTNCI(nn.Module):
             loss += prediction_dict[k] * self.llambdas[k]
         return loss
     
-    def set_hyperparameters(self, epochs, times = 1, perc = 1, patience = 50, weighted = False, regularized = False):
+    def set_hyperparameters(self, epochs, times = 1, perc = 1, patience = 50, weighted = False, regularized = False, beta = 500):
         self.epochs = epochs
         self.weighted = weighted
         self.regularized = regularized
@@ -147,6 +147,8 @@ class MTNCI(nn.Module):
 
         self.PERC = perc
         self.TIMES = times
+
+        self.beta = beta
 
         if self.weighted:
             self.datasetManager.compute_weights()
@@ -245,7 +247,7 @@ class MTNCI(nn.Module):
                 for batch_iteration in range(self.datasetManager.get_data_batch_length(dataset = 'train')):
 
                     if random.random() < self.PERC:
-
+                        
                         x, labels, targets = self.datasetManager.get_epoch_data(dataset='train', batch_iteration = batch_iteration)
 
                         ######################
@@ -826,8 +828,12 @@ class Embedding:
 
         for k, v in self.embedding.items():
             if include == 'all':
+                # print('v: {}'.format(v))
+                # print('vec: {}'.format(vec))
                 dists[k] = self.distance(v, vec)
             elif k in include_list:
+                # print('v: {}'.format(v))
+                # print('vec: {}'.format(vec))
                 dists[k] = self.distance(v, vec)
 
             
@@ -1096,7 +1102,10 @@ class multilabelAverageCosineDistanceLoss(cosineLoss):
 
         return torch.mean(mean_tensor, dim = 0)
 
-
+class personalBCELoss(Loss):
+    def compute_loss(self, true, pred):
+        pass
+        
 
 class ShimaokaMTNCI(MTNCI):
     
@@ -1499,7 +1508,7 @@ class ChoiMTNCI(ShimaokaMTNCI):
 
             lines = ['', '', '']
 
-            k_dict = {'coarse': 1, 'fine': 1, 'ultrafine': 1, 'all': 1}
+            k_dict = {'coarse': 1, 'fine': 1, 'ultrafine': 3, 'all': 5}
 
             out.write('\nlopez-like evaluation:\n')
 
@@ -1552,18 +1561,55 @@ class ChoiMTNCI(ShimaokaMTNCI):
     def fill_TSV(self, space, HITS):
         self.tsv[space]['HITS'].append(HITS)
 
+    def compute_measures_and_perfect(self, prediction, true_labels):
+        
+        measures = {'precision': [], 'recall': [], 'fmeasure': []} 
+        perfect_measures = {'precision': [], 'recall': [], 'fmeasure': []}
 
-class ClassifierMTNCI(ChoiMTNCI):
+        for p, t in zip(prediction, true_labels):
+            p = set(p)
+            t = set(t)
+
+            correct_pred = p.intersection(t)
+
+            if correct_pred:
+                measures['precision'].append(len(correct_pred)/len(p))
+                measures['recall'].append(len(correct_pred)/len(t))
+                measures['fmeasure'].append(self.f1(measures['precision'][-1], measures['recall'][-1]))
+            else:
+                measures['precision'].append(0)
+                measures['recall'].append(0)
+                measures['fmeasure'].append(0)
+
+            p_precision = len(t)/len(p)
+            if p_precision > 1:
+                p_precision = 1
+            
+            if len(t) <= len(p):
+                p_recall = 1
+            else:
+                p_recall = len(p)/len(t)
+
+            perfect_measures['precision'].append(p_precision)
+            perfect_measures['recall'].append(p_recall)
+            perfect_measures['fmeasure'].append(self.f1(p_precision, p_recall))
+
+        return measures, perfect_measures 
+
+class SingleClassifierMTNCI(ShimaokaMTNCI):
      
     def __init__(self, class_number, *args, **kwargs):
         
         super().__init__(*args, **kwargs)
 
-        self.classifierLayer =  nn.Linear(kwargs['dims'][-1] + 20, class_number, bias=True).cuda()
+        self.classifierLayer_1 =  nn.Linear(kwargs['dims'][-1] + 20, 256, bias=True).cuda()
+        # self.classifierLayer_1 =  nn.Linear(20, 256, bias=True).cuda()
+        self.classifierLayer_2 =  nn.Linear(256, class_number,bias=True).cuda()
         self.sigmoid = nn.Sigmoid()
-
-
+        self.leaky_relu = nn.LeakyReLU(0.1).cuda()
         self.classification_loss = nn.BCELoss() 
+        self.dropout = nn.Dropout(p=0.3).cuda()
+
 
 
     def forward(self, input):
@@ -1574,10 +1620,463 @@ class ClassifierMTNCI(ChoiMTNCI):
         common_output = self.common_network(shimaoka_vector)
 
         classifier_input = torch.cat((regression_vectors[0], regression_vectors[1], common_output), dim = 1)
+        # classifier_input = torch.cat((regression_vectors[0], regression_vectors[1]), dim = 1)
 
-        classifier_ouput = self.sigmoid(self.classifierLayer(classifier_input))
+        classifier_output = self.dropout(self.leaky_relu(self.classifierLayer_1(classifier_input)))
+        classifier_output = self.sigmoid(self.classifierLayer_2(classifier_output))
 
-        return regression_vectors, classifier_ouput
+        return regression_vectors, classifier_output
+
+    def train_model(self):
+
+        train_length = len(self.datasetManager.Y_train)
+        val_length = len(self.datasetManager.Y_val)
+
+        losses = Prediction(device = self.device).LOSSES
+
+        distributional_prediction_train_manager = self.get_prediction_manager(loss_name=self.losses_name_dict['distributional'])
+        distributional_prediction_val_manager = self.get_prediction_manager(loss_name=self.losses_name_dict['distributional'])
+
+        hyperbolic_prediction_train_manager = self.get_prediction_manager(loss_name=self.losses_name_dict['hyperbolic-train'])
+        
+        hyperbolic_prediction_val_manager = self.get_prediction_manager(loss_name=self.losses_name_dict['hyperbolic-val'])
+
+        hyperbolic_train_metric_manager = self.get_prediction_manager(loss_name=self.metric_name_dict['hyperbolic'])
+        distributional_train_metric_manager = self.get_prediction_manager(loss_name=self.metric_name_dict['distributional'])
+        
+        hyperbolic_val_metric_manager = self.get_prediction_manager(loss_name=self.metric_name_dict['hyperbolic'])
+        distributional_val_metric_manager = self.get_prediction_manager(loss_name=self.metric_name_dict['distributional'])
+
+        if self.weighted:
+
+            train_weights = self.datasetManager.get_weights(label = 'Train')
+            val_weights = self.datasetManager.get_weights(label = 'Val')
+
+            distributional_prediction_train_manager.set_weight(train_weights)
+            hyperbolic_prediction_train_manager.set_weight(train_weights)
+
+            distributional_prediction_val_manager.set_weight(val_weights)
+            hyperbolic_prediction_val_manager.set_weight(val_weights)
+
+            hyperbolic_train_metric_manager.set_weight(train_weights)
+            distributional_train_metric_manager.set_weight(train_weights)
+
+            hyperbolic_val_metric_manager.set_weight(val_weights)
+            distributional_val_metric_manager.set_weight(val_weights)
+
+        for epoch in range(self.epochs):
+            
+            self.datasetManager.get_epoch_data(initialize=True)
+
+            train_loss_SUM = 0
+            val_loss_SUM = 0
+            
+            distributional_train_loss_SUM = 0
+            distributional_val_loss_SUM = 0
+            
+            hyperbolic_train_loss_SUM = 0
+            hyperbolic_val_loss_SUM = 0
+
+            distributional_train_metric_SUM = 0
+            hyperbolic_train_metric_SUM = 0
+            
+            distributional_val_metric_SUM = 0
+            hyperbolic_val_metric_SUM = 0
+            
+            train_weights_sum = 0
+            val_weights_sum = 0
+
+            train_length = 0
+
+            bar = tqdm(total=self.TIMES * self.datasetManager.get_data_batch_length(dataset='train'))
+            for _ in range(self.TIMES):
+                for batch_iteration in range(self.datasetManager.get_data_batch_length(dataset = 'train')):
+
+                    if random.random() < self.PERC:
+
+                        x, labels, targets, numeric_labels = self.datasetManager.get_epoch_data(dataset='train', batch_iteration = batch_iteration)
+
+                        # print('labels: {}'.format(labels))
+                        # print('targets: {}'.format(targets['distributional']))
+                        # print('numeric_labels: {}'.format(numeric_labels))
+                        ######################
+                        ####### TRAIN ########
+                        ######################
+                        # print('xs: {}'.format(x[0].shape))
+                        # print('targets: {}'.format(targets['distributional'].shape))
+                        self.optimizer.zero_grad()
+                        
+                        self.train()
+                        
+                        output, classifier_output = self(x)
+
+                        # print('output: {}'.format(output))
+                        # print('classifier_output: {}'.format(classifier_output))
+
+                        distributional_prediction_train_manager.set_prediction(predictions = output[0],
+                                                                        true_values = targets['distributional'].squeeze(), 
+                                                                        labels = labels)
+
+                        hyperbolic_prediction_train_manager.set_prediction(predictions = output[1], 
+                                                                    true_values = targets['hyperbolic'].squeeze(),
+                                                                    labels = labels) 
+
+                        distributional_train_metric_manager.set_prediction(predictions = output[0],
+                                                                                        true_values = targets['distributional'].squeeze(), 
+                                                                                        labels = labels)
+
+                        hyperbolic_train_metric_manager.set_prediction(predictions = output[1], 
+                                                                    true_values = targets['hyperbolic'].squeeze(),
+                                                                    labels = labels)                
+
+                        if self.weighted:
+                            distributional_prediction_train_manager.compute_batch_weights()
+                            batch_weights = distributional_prediction_train_manager.get_batch_weights()
+                            train_weights_sum += torch.sum(batch_weights)
+
+                            distributional_prediction_train_manager.set_batch_weights(batch_weights)
+                            hyperbolic_prediction_train_manager.set_batch_weights(batch_weights)
+                            distributional_train_metric_manager.set_batch_weights(batch_weights)
+                            hyperbolic_train_metric_manager.set_batch_weights(batch_weights)
+
+                        distributional_train_loss = distributional_prediction_train_manager.compute_loss()
+                        
+                        hyperbolic_train_loss = hyperbolic_prediction_train_manager.compute_loss()
+                        
+                        distributional_train_loss_SUM += torch.sum(distributional_train_loss * self.llambdas['distributional']).item()
+                        hyperbolic_train_loss_SUM += torch.sum(hyperbolic_train_loss * self.llambdas['hyperbolic']).item()
+                        
+
+                        distributional_train_metric = distributional_train_metric_manager.compute_loss()
+                        hyperbolic_train_metric = hyperbolic_train_metric_manager.compute_loss()
+
+                        distributional_train_metric_SUM += torch.sum(distributional_train_metric).item()
+                        hyperbolic_train_metric_SUM += torch.sum(hyperbolic_train_metric).item()
+
+                        train_loss = self.get_multitask_loss({'distributional': distributional_train_loss, 
+                                                            'hyperbolic': hyperbolic_train_loss})
+                        
+                        classifier_loss = self.classification_loss(classifier_output, numeric_labels) * self.beta
+
+                        train_loss = train_loss + classifier_loss 
+
+                        train_loss_SUM += train_loss.item()
+
+                        train_loss.backward()
+                        self.optimizer.step()
+
+                        train_length += len(labels)
+
+                    bar.update(1)
+            bar.close()
+
+            with torch.no_grad():
+                self.eval()   
+                classifier_loss_sum = 0
+                bar_val = tqdm(total=self.datasetManager.get_data_batch_length(dataset='val'))
+                # for batch_iteration in range(len(self.datasetManager.valloader)):
+                for batch_iteration in range(self.datasetManager.get_data_batch_length(dataset='val')):
+                    x, labels, targets, numeric_labels = self.datasetManager.get_epoch_data(dataset='val', batch_iteration = batch_iteration)
+
+                    ######################
+                    ######## VAL #########
+                    ######################
+
+                    output, classifier_output = self(x)
+
+                    distributional_prediction_val_manager.set_prediction(predictions = output[0],
+                                                                    true_values = targets['distributional'].squeeze(),
+                                                                    labels = labels)
+
+                    hyperbolic_prediction_val_manager.set_prediction(predictions = output[1], 
+                                                                true_values = targets['hyperbolic'].squeeze(),
+                                                                labels = labels) 
+                    
+                    distributional_val_metric_manager.set_prediction(predictions = output[0],
+                                                                            true_values = targets['distributional'].squeeze(), 
+                                                                            labels = labels)
+
+                    hyperbolic_val_metric_manager.set_prediction(predictions = output[1], 
+                                                                        true_values = targets['hyperbolic'].squeeze(),
+                                                                        labels = labels)                
+
+
+                    if self.weighted:
+                        distributional_prediction_val_manager.compute_batch_weights()
+                        batch_weights = distributional_prediction_val_manager.get_batch_weights()
+                        val_weights_sum += torch.sum(batch_weights)
+
+                        distributional_prediction_val_manager.set_batch_weights(batch_weights)
+                        hyperbolic_prediction_val_manager.set_batch_weights(batch_weights)
+                        distributional_val_metric_manager.set_batch_weights(batch_weights)
+                        hyperbolic_val_metric_manager.set_batch_weights(batch_weights)
+
+
+                    distributional_val_loss = distributional_prediction_val_manager.compute_loss()
+                    hyperbolic_val_loss = hyperbolic_prediction_val_manager.compute_loss()
+
+                    distributional_val_loss_SUM += torch.sum(distributional_val_loss * self.llambdas['distributional']).item()
+                    hyperbolic_val_loss_SUM += torch.sum(hyperbolic_val_loss * (self.llambdas['hyperbolic'])).item()
+                    
+                    distributional_val_metric = distributional_val_metric_manager.compute_loss()
+                    hyperbolic_val_metric = hyperbolic_val_metric_manager.compute_loss()
+
+                    distributional_val_metric_SUM += torch.sum(distributional_val_metric).item()
+                    hyperbolic_val_metric_SUM += torch.sum(hyperbolic_val_metric).item()
+
+                    val_loss = self.get_multitask_loss({'distributional': distributional_val_loss, 
+                                                        'hyperbolic': hyperbolic_val_loss})
+                    
+
+                    classifier_loss = self.classification_loss(classifier_output, numeric_labels) * self.beta
+
+                    classifier_loss_sum += classifier_loss.item()
+
+                    val_loss = val_loss + classifier_loss 
+
+                    val_loss_SUM += val_loss.item()
+
+                    bar_val.update(1)
+
+            bar_val.close()
+            if not self.weighted:
+                train_loss_value = train_loss_SUM/train_length
+                val_loss_value = val_loss_SUM/val_length
+
+                hyperbolic_train_loss_value = hyperbolic_train_loss_SUM/train_length
+                hyperbolic_val_loss_value = hyperbolic_val_loss_SUM/val_length
+
+                distributional_train_loss_value = distributional_train_loss_SUM/train_length
+                distributional_val_loss_value = distributional_val_loss_SUM/val_length
+
+                distributional_train_metric_value = distributional_train_metric_SUM/train_length
+                hyperbolic_train_metric_value = hyperbolic_train_metric_SUM/train_length
+
+                distributional_val_metric_value = distributional_val_metric_SUM/val_length
+                hyperbolic_val_metric_value = hyperbolic_val_metric_SUM/val_length
+
+                classifier_loss_value = classifier_loss_sum/val_length
+
+            else:
+                train_loss_value = train_loss_SUM/train_weights_sum
+                val_loss_value = val_loss_SUM/val_weights_sum
+
+                hyperbolic_train_loss_value = hyperbolic_train_loss_SUM/train_weights_sum
+                hyperbolic_val_loss_value = hyperbolic_val_loss_SUM/val_weights_sum
+
+                distributional_train_loss_value = distributional_train_loss_SUM/train_weights_sum
+                distributional_val_loss_value = distributional_val_loss_SUM/val_weights_sum
+
+                distributional_train_metric_value = distributional_train_metric_SUM/train_weights_sum
+                hyperbolic_train_metric_value = hyperbolic_train_metric_SUM/train_weights_sum
+
+                distributional_val_metric_value = distributional_val_metric_SUM/val_weights_sum
+                hyperbolic_val_metric_value = hyperbolic_val_metric_SUM/val_weights_sum
+                
+
+            self.checkpointManager(val_loss_value, epoch)
+
+            if self.early_stopping:
+                break
+
+            losses_dict = {'Losses/Hyperbolic Losses': {'Train': hyperbolic_train_loss_value, 
+                                                 'Val': hyperbolic_val_loss_value},
+                           'Losses/Distributional Losses':  {'Train': distributional_train_loss_value,
+                                                      'Val': distributional_val_loss_value},
+                           'Losses/MTL-Losses': {'Train': train_loss_value,
+                                          'Val': val_loss_value}
+            }
+
+
+            metric_dict = {'Metrics/Hyperbolic Metrics': {'Train': hyperbolic_train_metric_value, 
+                                                 'Val': hyperbolic_val_metric_value},
+                           'Metrics/Distributional Metrics':  {'Train': distributional_train_metric_value,
+                                                                'Val': distributional_val_metric_value}
+                            }
+            self.log_losses(losses_dict = losses_dict, epoch = epoch + 1)
+
+            self.log_losses(losses_dict=metric_dict, epoch = epoch + 1)
+
+            print('{:^25}'.format('epoch {:^3}/{:^3}'.format(epoch, self.epochs)))
+            print('{:^25}'.format('Train loss: {:.4f}, Val loss: {:.4f}, Min loss: {:.4f} at epoch: {}'.format(train_loss_value, 
+                                                                                                    val_loss_value, 
+                                                                                                    self.min_loss, 
+                                                                                                    self.best_epoch)))
+            print('{:^25}'.format('T_MHD: {:.4f}, V_MHD:{:.4f}'.format(hyperbolic_train_metric_value, hyperbolic_val_metric_value)))
+            print('{:^25}'.format('T_MDD: {:.4f}, V_MDD:{:.4f}'.format(distributional_train_metric_value, distributional_val_metric_value)))
+            print('classifier_loss: {:.4f}'.format(classifier_loss_value))
+
+
+    def type_prediction_on_test(self, topn, test_data, entities, labels):
+
+        checkpoint = torch.load(self.checkpoint_path)
+
+        try:
+            print('loading model checkpoint at epoch {}'.format(checkpoint['epoch']))
+            with open(self.TSV_path, 'a') as out:
+                out.write('-------------------------------------')
+                out.write('best epoch: {}'.format(checkpoint['epoch']))
+                out.write('-------------------------------------\n')
+
+
+            with open(self.results_path, 'a') as out:
+                out.write('-------------------------------------')
+                out.write('best epoch: {}'.format(checkpoint['epoch']))
+                out.write('-------------------------------------\n')
+        except:
+            pass
+
+        self.load_state_dict(checkpoint['model_state_dict'])
+
+        self.eval()
+
+        self.topn = [1]
+
+        x = [[], []]
+        class_preds = []
+        i = 0
+        print('... extract prediction on test ...')
+        for i in tqdm(range(len(test_data['data']))):
+            t = test_data['data'][i]
+            pred, class_pred = self(t)
+            x[0].extend(pred[0].detach().cpu().numpy())
+            x[1].extend(pred[1].detach().cpu().numpy())
+            class_preds.extend(class_pred.detach().cpu().numpy())
+
+        self.emb = Embedding()           
+        self.emb.set_embedding(self.datasetManager.concept_embeddings['hyperbolic'])
+        self.emb.set_name('hyperbolic')
+
+        labels = [l[0] for l in labels]
+            
+        self.compute_classifier_prediction(class_preds, labels)
+        
+        super().compute_prediction(x, labels = labels, entities = entities)
+
+    def extract_top(self, class_preds, t):
+        
+        indexes = class_preds.argsort()[-t:][::-1]
+
+        return self.datasetManager.get_label_from_numeric([indexes])
+    
+    def compute_classifier_prediction(self, class_preds, labels):
+        t = self.topn[-1]
+        
+        top_preds = []
+        for c in class_preds:
+            pred = self.extract_top(c, t)
+            top_preds.append(pred)
+
+        self.tsv = {'classifier':{'recalls': [],
+                                'precisions': [],
+                                'fmeasures': []},
+                    }
+
+
+        concept_number = {s:len([l for l in labels if l == s]) for s in set(labels)}
+
+        recalls, precisions, fmeasures = self.compute_classifier_metrics(total = len(top_preds), 
+                                                                        predictions = top_preds, 
+                                                                        labels = labels,
+                                                                        elements_number_for_concept = concept_number)
+
+        
+        self.fill_TSV(space = 'classifier', precisions=precisions, recalls=recalls, fmeasures=fmeasures)
+        self.save_results(recalls = recalls, 
+                            precisions = precisions, 
+                            fmeasures = fmeasures, 
+                            level_name = 'Occurrence Level in {} space'.format('classifier'))
+
+
+        
+
+    def compute_classifier_metrics(self, total, predictions, labels, elements_number_for_concept):
+            
+            concept_accuracies = {t: {s:0 for s in set(labels)} for t in self.topn}
+
+            precision_at_n = {t: 0 for t in self.topn}
+            recall_at_n = {t: 0 for t in self.topn}
+            f_measure = {t: 0 for t in self.topn}
+
+            concept_predicted = defaultdict(int)
+            correct_prediction = defaultdict(int)
+            corrects_n = {t: 0 for t in self.topn}
+
+            bar = tqdm(total=len(predictions))
+            bar.set_description('getting results')
+            
+            i = 0
+
+            for pred, label in zip(predictions, labels):
+                for t in self.topn:
+                    new_neigh = [p[0] for p in pred[:t]]
+                    if label in new_neigh:
+                        corrects_n[t] += 1
+                        concept_accuracies[t][label] += 1
+                
+                    if t == 1:
+                        concept_predicted[new_neigh[0]] += 1
+                        if label in new_neigh:
+                            correct_prediction[new_neigh[0]] += 1
+                    
+                    i += 1
+
+            bar.close()
+
+            micro_average_recall, macro_average_recall = {}, {}
+
+            for t in self.topn:
+                recall_at_n[t] = {s: (concept_accuracies[t][s]/elements_number_for_concept[s], elements_number_for_concept[s]) for s in set(labels)}
+                micro_average_recall[t] = corrects_n[t]/total
+                macro_average_recall[t] = np.mean([p[0] for p in recall_at_n[t].values()])
+
+            micro_average_precision, macro_average_precision = {}, {}
+
+            precision_at_n[1] = {s: (correct_prediction[s]/concept_predicted[s] if concept_predicted[s] != 0 else 0, concept_predicted[s]) for s in set(labels)}
+            micro_average_precision[1] = sum([c for c in correct_prediction.values()])/ sum([c for c in concept_predicted.values()])
+            macro_average_precision[1] = np.mean([p[0] for p in precision_at_n[1].values()]) 
+
+            micro_average_fmeasure, macro_average_fmeasure = defaultdict(int), defaultdict(int)
+            
+            f_measure[1] = {s: self.f1(precision_at_n[1][s][0], recall_at_n[1][s][0]) for s in set(labels)}
+            macro_average_fmeasure[1] = self.f1(macro_average_precision[1], macro_average_recall[1])
+            micro_average_fmeasure[1] = self.f1(micro_average_precision[1], micro_average_recall[1])
+
+            recalls = self.make_measure_dict(micro_average_recall, macro_average_recall, recall_at_n)
+            precisions = self.make_measure_dict(micro_average_precision, macro_average_precision, precision_at_n)
+            fmeasures = self.make_measure_dict(micro_average_fmeasure, macro_average_fmeasure, f_measure)
+
+            return recalls, precisions, fmeasures                
+
+
+class ClassifierMTNCI(ChoiMTNCI):
+     
+    def __init__(self, class_number, *args, **kwargs):
+        
+        super().__init__(*args, **kwargs)
+
+        self.classifierLayer_1 =  nn.Linear(kwargs['dims'][-1] + 20, 256, bias=True).cuda()
+        # self.classifierLayer_1 =  nn.Linear(20, 256, bias=True).cuda()
+        self.classifierLayer_2 =  nn.Linear(256, class_number,bias=True).cuda()
+        self.sigmoid = nn.Sigmoid()
+        self.leaky_relu = nn.LeakyReLU(0.1).cuda()
+        self.classification_loss = nn.BCELoss() 
+
+
+    def forward(self, input):
+
+        regression_vectors = super().forward(input)
+
+        shimaoka_vector = self.get_shimaoka_output(input)
+        # common_output = self.common_network(shimaoka_vector)
+
+        # classifier_input = torch.cat((regression_vectors[0], regression_vectors[1], common_output), dim = 1)
+        classifier_input = torch.cat((regression_vectors[0], regression_vectors[1]), dim = 1)
+
+        classifier_output = self.leaky_relu(self.classifierLayer_1(classifier_input))
+        classifier_output = self.sigmoid(self.classifierLayer_2(classifier_output))
+
+        return regression_vectors, classifier_output
 
     def train_model(self):
 
@@ -1701,7 +2200,7 @@ class ClassifierMTNCI(ChoiMTNCI):
                                                             'hyperbolic': hyperbolic_train_loss})
                         
 
-                        classifier_loss = self.classification_loss(classifier_output, numeric_labels)
+                        classifier_loss = self.classification_loss(classifier_output, numeric_labels) * 500
 
                         train_loss = train_loss + classifier_loss 
 
@@ -1856,6 +2355,16 @@ class ClassifierMTNCI(ChoiMTNCI):
 
         try:
             print('loading model checkpoint at epoch {}'.format(checkpoint['epoch']))
+            with open(self.TSV_path, 'a') as out:
+                out.write('-------------------------------------')
+                out.write('best epoch: {}'.format(checkpoint['epoch']))
+                out.write('-------------------------------------\n')
+
+
+            with open(self.results_path, 'a') as out:
+                out.write('-------------------------------------')
+                out.write('best epoch: {}'.format(checkpoint['epoch']))
+                out.write('-------------------------------------\n')
         except:
             pass
 
@@ -1865,25 +2374,28 @@ class ClassifierMTNCI(ChoiMTNCI):
 
         self.topn = topn
 
-        # x = [[], []]
+        x = [[], []]
         class_preds = []
         i = 0
         print('... extract prediction on test ...')
         for i in tqdm(range(len(test_data['data']))):
             t = test_data['data'][i]
             pred, class_pred = self(t)
-            # x[0].extend(pred[0].detach().cpu().numpy())
-            # x[1].extend(pred[1].detach().cpu().numpy())
+            x[0].extend(pred[0].detach().cpu().numpy())
+            x[1].extend(pred[1].detach().cpu().numpy())
             class_preds.extend(class_pred.detach().cpu().numpy())
 
         self.emb = Embedding()            
         self.emb.set_embedding(self.datasetManager.concept_embeddings['hyperbolic'])
         self.emb.set_name('hyperbolic')
             
+        self.compute_statistics(class_preds = class_preds)
 
         self.compute_classifier_prediction(class_preds, labels)
+
+        self.compute_topn_predictions(class_preds, labels)
         
-        # self.compute_prediction(x, labels = labels, entities = entities)
+        super().compute_prediction(x, labels = labels, entities = entities)
 
     def compute_classifier_prediction(self, predictions, labels):
         
@@ -1896,15 +2408,12 @@ class ClassifierMTNCI(ChoiMTNCI):
             class_preds = self.datasetManager.get_label_from_numeric(indexes)
             preds.extend(class_preds)
 
-        
-        measures, perfect_measures = self.compute_IR_metrics(predictions = preds, labels_lists = labels)
+        measures, perfect_measures = self.compute_IR_metrics_classifier(predictions = preds, labels_lists = labels)
 
         self.save_IR_results(measures = measures, perfect = perfect_measures)
 
-
-
-    def compute_IR_metrics(self, predictions, labels_lists, granularities = ['coarse', 'fine', 'ultrafine', 'all']):
-        
+    def compute_IR_metrics_classifier(self, predictions, labels_lists, granularities = ['coarse', 'fine', 'ultrafine', 'all']):
+           
         precision = {g: {t: 0 for t in self.topn} for g in granularities}
         recall = {g: {t: 0 for t in self.topn} for g in granularities}        
         
@@ -1931,7 +2440,6 @@ class ClassifierMTNCI(ChoiMTNCI):
                     filtered_labels = labels
                 if filtered_labels:
                     for t in self.topn:
-
                         new_neigh = pred
                         corrects = 0
                         for n in new_neigh:
@@ -1985,3 +2493,81 @@ class ClassifierMTNCI(ChoiMTNCI):
         print('recall: {}'.format(recall))
 
         return [precision, recall, fmeasure], [perfect_score_precision, perfect_score_recall, perfect_score_fmeasure]
+
+    def compute_topn_predictions(self, class_preds, labels):
+
+        bar = tqdm(total=len(self.topn) * len(labels))
+        bar.set_description('compute topn for classifier')
+
+        precision, recall, fmeasure = {'all': {t: [] for t in self.topn}}, {'all': {t: [] for t in self.topn}}, {'all': {t: [] for t in self.topn}}
+
+        perfect_precision, perfect_recall, perfect_fmeasure = {'all': {t: [] for t in self.topn}}, {'all': {t: [] for t in self.topn}}, {'all': {t: [] for t in self.topn}}
+        
+        for t in self.topn:
+            for c, l in zip(class_preds, labels):
+                pred = self.extract_top(c, t)
+                
+                m, p = self.compute_measures_and_perfect(prediction=pred, true_labels=[l])
+
+                precision['all'][t].append(m['precision'][0])
+                recall['all'][t].append(m['recall'][0])
+                fmeasure['all'][t].append(m['fmeasure'][0])
+
+                perfect_precision['all'][t].append(p['precision'][0])
+                perfect_recall['all'][t].append(p['recall'][0])
+                perfect_fmeasure['all'][t].append(p['fmeasure'][0])
+                
+                bar.update(1)
+        
+            precision['all'][t] = np.mean(precision['all'][t])
+            recall['all'][t] = np.mean(recall['all'][t])
+            fmeasure['all'][t] = np.mean(fmeasure['all'][t])
+
+
+            perfect_precision['all'][t] = np.mean(perfect_precision['all'][t])
+            perfect_recall['all'][t] = np.mean(perfect_recall['all'][t])
+            perfect_fmeasure['all'][t] = np.mean(perfect_fmeasure['all'][t])
+
+        measures = [precision, recall, fmeasure]
+        perfect_measures = [perfect_precision, perfect_recall, perfect_fmeasure]
+
+        self.save_IR_results(measures = measures, perfect = perfect_measures)
+
+        bar.close()
+
+    def extract_top(self, class_preds, t):
+        
+        indexes = class_preds.argsort()[-t:][::-1]
+
+        return self.datasetManager.get_label_from_numeric([indexes])
+
+    
+    def compute_statistics(self, class_preds):
+        for t in self.topn:
+            value_sum = 0
+            for p in class_preds:
+                value = sorted(p, reverse=True)[t - 1]
+                value_sum += value
+
+            self.write_statistics(t, value_sum/len(class_preds))
+
+        lens_sum = 0
+        for p in class_preds:
+            indexes = np.where(p > 0.5)
+            c_p = self.datasetManager.get_label_from_numeric(indexes)
+            lens_sum += len(c_p[0])
+
+        average_preds = lens_sum/len(class_preds)
+
+        with open(self.results_path, 'a') as out:
+            out.write('\n average prediction with threshold setted as 0.5 : {}\n'.format(average_preds))
+
+
+    def write_statistics(self, top, value):
+        with open(self.results_path, 'a') as out:
+            out.write('\n average inferior bound to produce {} predictions: {}\n'.format(top, value))
+
+        # with open(self.TSV_path, 'a') as out:
+            # out.write('{}\t'.format(value))
+        
+

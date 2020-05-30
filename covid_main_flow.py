@@ -1,7 +1,9 @@
 from MTNCI.MTNCI import ShimaokaMTNCI
-# from MTNCI import LopezLike as ShimaokaMTNCI
+# from MTNCI.MTNCI import SingleClassifierMTNCI as ShimaokaMTNCI
 import torch
 from MTNCI.DatasetManager import ShimaokaMTNCIDatasetManager as DatasetManager
+# from MTNCI.DatasetManager import ClassifierDataManager as DatasetManager
+
 import sys 
 sys.path.append('../figet-hyperbolic-space')
 import figet
@@ -25,11 +27,11 @@ class argClass():
         self.mention_dropout = 0.5
         self.context_dropout = 0.5
 
-# lopez_data = torch.load('../figet-hyperbolic-space/data/prep/lopez_covid/data.pt')
-# word2vec = torch.load('../figet-hyperbolic-space/data/prep/lopez_covid/word2vec.pt')
+lopez_data = torch.load('../figet-hyperbolic-space/data/prep/lopez_covid/data.pt')
+word2vec = torch.load('../figet-hyperbolic-space/data/prep/lopez_covid/word2vec.pt')
 
-lopez_data = torch.load('../figet-hyperbolic-space/data/prep/single_ontonotes/data.pt')
-word2vec = torch.load('../figet-hyperbolic-space/data/prep/single_ontonotes/word2vec.pt')
+# lopez_data = torch.load('../figet-hyperbolic-space/data/prep/single_ontonotes/data.pt')
+# word2vec = torch.load('../figet-hyperbolic-space/data/prep/single_ontonotes/word2vec.pt')
 
 
 
@@ -51,28 +53,28 @@ args = argClass(args)
 vocabs = lopez_data['vocabs']
 dims = [512, 512]
 SHIMAOKA_OUT = args.context_rnn_size * 2 + args.emb_size + args.char_emb_size
-out_spec = [{'manifold':'euclid', 'dim':[256, 10]},
-            # {'manifold':'poincare', 'dim':[128, 128, 10]}]
-            {'manifold':'poincare', 'dim':[512, 256, 10]}]
+out_spec = [{'manifold':'euclid', 'dim':[64, 10]},
+            {'manifold':'poincare', 'dim':[128, 128, 10]}]
+            # {'manifold':'poincare', 'dim':[512, 256, 10]}]
 
-NAME = 'ontonotes_weighted'
+NAME = 'covid_unweighted_correct_architecture'
 
 regularized = False
 regul_dict = {'negative_sampling': 0, 'mse': 50, 'distance_power':1}
 
 
 tensorboard_run_ID = NAME
-results_path = 'results/ontonotes_single/' + NAME + '.txt'
-TSV_path = 'results/ontonotes_single_export/export_' + NAME + '.txt'
+results_path = 'results/covid/' + NAME + '.txt'
+TSV_path = 'results/covid_export/export_' + NAME + '.txt'
 
 lr = 1e-3
 
 llambda = 0.5
-weighted = True
-epochs = 50
-patience = 50
+weighted = False
+epochs = 500
+patience = 25
 
-times = 8
+times = 4
 perc = 0.1
 
 nickel = True
@@ -84,14 +86,14 @@ FILE_ID = '16_3'
 SOURCE_FILES_PATH = '/datahdd/vmanuel/MTNCI_datasets/source_files/'
 # SOURCE_FILES_PATH = '../source_files/'
 
-# EMBEDDING_PATH = './covid/models/'
-# PATH_TO_HYPERBOLIC_EMBEDDING = EMBEDDING_PATH + 'covid.pth.best'
-# PATH_TO_DISTRIBUTIONAL_EMBEDDING = EMBEDDING_PATH + 'type2vec_cleaned'
+EMBEDDING_PATH = './covid/models/'
+PATH_TO_HYPERBOLIC_EMBEDDING = EMBEDDING_PATH + 'covid.pth.best'
+PATH_TO_DISTRIBUTIONAL_EMBEDDING = EMBEDDING_PATH + 'type2vec_cleaned'
 
 
-EMBEDDING_PATH = '../figet-hyperbolic-space/data/type-embeds/'
-PATH_TO_HYPERBOLIC_EMBEDDING = EMBEDDING_PATH + 'ontonotes-clean.pth'
-PATH_TO_DISTRIBUTIONAL_EMBEDDING = EMBEDDING_PATH + 'ontonotes_type2vec_cleaned'
+# EMBEDDING_PATH = '../figet-hyperbolic-space/data/type-embeds/'
+# PATH_TO_HYPERBOLIC_EMBEDDING = EMBEDDING_PATH + 'ontonotes-clean.pth'
+# PATH_TO_DISTRIBUTIONAL_EMBEDDING = EMBEDDING_PATH + 'ontonotes_type2vec_cleaned'
 
 
 
@@ -119,6 +121,9 @@ if __name__ == "__main__":
     val_labels = [lopez_data['vocabs']['type'].idx2label[label.item()] for entry in val for labels in entry[5] for label in labels]
     test_labels = [lopez_data['vocabs']['type'].idx2label[label.item()] for entry in test for labels in entry[5] for label in labels]
     
+    all_labels = set([l for lab in train_labels for l in lab])
+    class_number = len(all_labels)
+
     # train_entities = []
     # for entry in tqdm(train): 
     #     for entities in entry[3]:
@@ -146,9 +151,19 @@ if __name__ == "__main__":
     test_data = {'data': test, 'labels': test_labels}
     print('setup datamanager')
     datasetManager.set_batched_data(train_data, val_data, test_data)
+    datasetManager.set_concept_number(concept_number=class_number)
     
+
     t = time.time()
     for i in range(1, 5):
+        # model = ShimaokaMTNCI(class_number = class_number,
+        #                     argss = args, 
+        #                     vocabs = vocabs, 
+        #                     device = device, 
+        #                     input_d=SHIMAOKA_OUT,
+        #                     out_spec = out_spec,
+        #                     dims = dims)
+
         model = ShimaokaMTNCI(args, vocabs, device, 
                         input_d=SHIMAOKA_OUT,
                         out_spec = out_spec,

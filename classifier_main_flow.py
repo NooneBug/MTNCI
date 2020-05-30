@@ -1,4 +1,5 @@
-from MTNCI.MTNCI import ClassifierMTNCI
+# from MTNCI.MTNCI import ClassifierMTNCI
+from MTNCI.MTNCI import SingleClassifierMTNCI as ClassifierMTNCI
 # from MTNCI import LopezLike as ShimaokaMTNCI
 import torch
 from MTNCI.DatasetManager import ClassifierDataManager as DatasetManager
@@ -15,7 +16,6 @@ import time
 from AAA import send
 
 
-
 class argClass():
     
     def __init__(self, args):
@@ -28,14 +28,17 @@ class argClass():
         self.context_dropout = 0.5
 
 
-lopez_data = torch.load('../figet-hyperbolic-space/data/prep/ontonotes/data.pt')
-word2vec = torch.load('../figet-hyperbolic-space/data/prep/ontonotes/word2vec.pt')
+# lopez_data = torch.load('../figet-hyperbolic-space/data/prep/ontonotes/data.pt')
+# word2vec = torch.load('../figet-hyperbolic-space/data/prep/ontonotes/word2vec.pt')
 
 # lopez_data = torch.load('../figet-hyperbolic-space/data/prep/onto_no_coarse/data.pt')
 # word2vec = torch.load('../figet-hyperbolic-space/data/prep/onto_no_coarse/word2vec.pt')
 
 # lopez_data = torch.load('../figet-hyperbolic-space/data/prep/onto-ultra-only/data.pt')
 # word2vec = torch.load('../figet-hyperbolic-space/data/prep/onto-ultra-only/word2vec.pt')
+
+# lopez_data = torch.load('../figet-hyperbolic-space/data/prep/single_ontonotes/data.pt')
+# word2vec = torch.load('../figet-hyperbolic-space/data/prep/single_ontonotes/word2vec.pt')
 
 # lopez_data = torch.load('../figet-hyperbolic-space/data/prep/crowd-wordnet/data.pt')
 # word2vec = torch.load('../figet-hyperbolic-space/data/prep/crowd-wordnet/word2vec.pt')
@@ -46,22 +49,37 @@ word2vec = torch.load('../figet-hyperbolic-space/data/prep/ontonotes/word2vec.pt
 # lopez_data = torch.load('../figet-hyperbolic-space/data/prep/crowd-wordnet-ultra-only/data.pt')
 # word2vec = torch.load('../figet-hyperbolic-space/data/prep/crowd-wordnet-ultra-only/word2vec.pt')
 
+lopez_data = torch.load('../figet-hyperbolic-space/data/prep/lopez_covid/data.pt')
+word2vec = torch.load('../figet-hyperbolic-space/data/prep/lopez_covid/word2vec.pt')
+
+
+# losses_dict = {
+#     'hyperbolic-train': LOSSES['multilabel_Average_Poincare'],
+#     'hyperbolic-val': LOSSES['multilabel_Average_Poincare'],
+#     'distributional': LOSSES['multilabel_Average_Cosine']
+#     # 'distributional': LOSSES['multilabel_Minimum_Cosine'],
+#     # 'hyperbolic-train': LOSSES['multilabel_Minimum_Poincare'],
+#     # 'hyperbolic-val': LOSSES['multilabel_Minimum_Poincare']
+# }
+
+# metrics_dict = {
+#     # 'distributional': LOSSES['multilabel_Minimum_Cosine'],
+#     'distributional': LOSSES['multilabel_Average_Cosine'],
+#     # 'hyperbolic': LOSSES['multilabel_Minimum_Poincare'],
+#     'hyperbolic': LOSSES['multilabel_Average_Poincare']
+# }
 
 losses_dict = {
-    'hyperbolic-train': LOSSES['multilabel_Average_Poincare'],
-    'hyperbolic-val': LOSSES['multilabel_Average_Poincare'],
-    'distributional': LOSSES['multilabel_Average_Cosine']
-    # 'distributional': LOSSES['multilabel_Minimum_Cosine'],
-    # 'hyperbolic-train': LOSSES['multilabel_Minimum_Poincare'],
-    # 'hyperbolic-val': LOSSES['multilabel_Minimum_Poincare']
+    'hyperbolic-train': LOSSES['hyperbolic_distance'],
+    'hyperbolic-val': LOSSES['hyperbolic_distance'],
+    'distributional': LOSSES['cosine_dissimilarity']
 }
 
 metrics_dict = {
-    # 'distributional': LOSSES['multilabel_Minimum_Cosine'],
-    'distributional': LOSSES['multilabel_Average_Cosine'],
-    # 'hyperbolic': LOSSES['multilabel_Minimum_Poincare'],
-    'hyperbolic': LOSSES['multilabel_Average_Poincare']
+    'distributional': LOSSES['cosine_dissimilarity'],
+    'hyperbolic': LOSSES['hyperbolic_distance']
 }
+
 
 
 args = {'emb_size': 300, 'char_emb_size': 50, 'positional_emb_size': 25, 'context_rnn_size':200,
@@ -69,25 +87,28 @@ args = {'emb_size': 300, 'char_emb_size': 50, 'positional_emb_size': 25, 'contex
 args = argClass(args)
 vocabs = lopez_data['vocabs']
 SHIMAOKA_OUT = args.context_rnn_size * 2 + args.emb_size + args.char_emb_size
-dims = [512, 512, 512]
+dims = [512, 512]
 out_spec = [{'manifold':'euclid', 'dim':[256, 10]},
             # {'manifold':'poincare', 'dim':[128, 128, 10]}]
-            {'manifold':'poincare', 'dim':[512, 512, 256, 10]}]
+            {'manifold':'poincare', 'dim':[512, 256, 10]}]
 
-NAME = 'classifier_prova'
+
+NAME = 'covid_classifier_beta_10'
 # NAME = 'wordnet_ultra_only_average_100'
 # NAME = 'prova'
 
-models = 8
+beta = 10
 
+models = 5
+start = 1
 
 regularized = False
 regul_dict = {'negative_sampling': 0, 'mse': 50, 'distance_power':1}
 
 
 tensorboard_run_ID = NAME
-results_path = 'results/ontonotes/' + NAME + '.txt'
-TSV_path = 'results/ontonotes_export/export' + NAME + '.txt'
+results_path = 'results/covid/' + NAME + '.txt'
+TSV_path = 'results/covid_export/export_' + NAME + '.txt'
 
 lr = 1e-3
 
@@ -105,19 +126,22 @@ perc = 0.1
 SOURCE_FILES_PATH = '/datahdd/vmanuel/MTNCI_datasets/source_files/'
 # SOURCE_FILES_PATH = '../source_files/'
 
-type_embeddings='../figet-hyperbolic-space/data/type-embeds/ontonotes-clean.pth'
+# type_embeddings='../figet-hyperbolic-space/data/type-embeds/ontonotes-clean.pth'
 # type_embeddings='../poincare-embeddings/chk/lopez_wordnet.pth.best'
-PATH_TO_HYPERBOLIC_EMBEDDING = type_embeddings
+# PATH_TO_HYPERBOLIC_EMBEDDING = type_embeddings
 
-# EMBEDDING_PATH = './covid/models/'
 
-# PATH_TO_HYPERBOLIC_EMBEDDING = EMBEDDING_PATH + 'covid.pth.best'
+EMBEDDING_PATH = './covid/models/'
+PATH_TO_HYPERBOLIC_EMBEDDING = EMBEDDING_PATH + 'covid.pth.best'
+PATH_TO_DISTRIBUTIONAL_EMBEDDING = EMBEDDING_PATH + 'type2vec_cleaned'
 
-type_embeddings='../figet-hyperbolic-space/data/type-embeds/ontonotes_type2vec_cleaned'
+
+
+# type_embeddings='../figet-hyperbolic-space/data/type-embeds/ontonotes_type2vec_cleaned'
 # type_embeddings='../figet-hyperbolic-space/data/type-embeds/freq-cooc-sym-euclid-10dim.bin'
 
 nickel = False
-PATH_TO_DISTRIBUTIONAL_EMBEDDING = type_embeddings
+# PATH_TO_DISTRIBUTIONAL_EMBEDDING = type_embeddings
 
 CONCEPT_EMBEDDING_PATHS = [PATH_TO_DISTRIBUTIONAL_EMBEDDING, 
                            PATH_TO_HYPERBOLIC_EMBEDDING]
@@ -135,7 +159,7 @@ if __name__ == "__main__":
         return dataset
 
     print('load dataset')
-    train = get_dataset(lopez_data, 2048, "train")
+    train = get_dataset(lopez_data, 1024, "train")
     val = get_dataset(lopez_data, 16, "dev")
     test = get_dataset(lopez_data, 256, "test")
     print('transform dataset')
@@ -144,7 +168,7 @@ if __name__ == "__main__":
     val_labels = [[lopez_data['vocabs']['type'].idx2label[label.item()] for label in labels] for entry in tqdm(val) for labels in entry[5]]
     test_labels = [[lopez_data['vocabs']['type'].idx2label[label.item()] for label in labels] for entry in tqdm(test) for labels in entry[5]]
     
-    all_labels = set([l for lab in train_labels for l in lab])
+
     
 
     # for t in val:
@@ -159,6 +183,7 @@ if __name__ == "__main__":
     #                 entity_label += lopez_data['vocabs']['token'].idx2label[entity.item()] + ' '
     #         train_entities.append(entity_label)
     
+    all_labels = set([l for lab in train_labels for l in lab])
     class_number = len(all_labels)
 
     test_entities = []
@@ -184,7 +209,10 @@ if __name__ == "__main__":
     datasetManager.set_batched_data(train_data, val_data, test_data, lopez_data['vocabs']['type'])
     
     t = time.time()
-    for i in range(1, 1 + models):
+
+    datasetManager.set_concept_number(concept_number=class_number)
+
+    for i in range(start, start + models):
         model = ClassifierMTNCI(class_number = class_number,
                             argss = args, 
                             vocabs = vocabs, 
@@ -197,7 +225,7 @@ if __name__ == "__main__":
 
         model.set_dataset_manager(datasetManager)
         
-        model.set_checkpoint_path(checkpoint_path = '../source_files/checkpoints/{}'.format(tensorboard_run_ID))
+        model.set_checkpoint_path(checkpoint_path = '../source_files/checkpoints/{}'.format(tensorboard_run_ID + '_{}'.format(i)))
 
         model.initialize_tensorboard_manager(tensorboard_run_ID)
 
@@ -219,7 +247,8 @@ if __name__ == "__main__":
                                     regularized=regularized, 
                                     patience = patience,
                                     times = times,
-                                    perc = perc)
+                                    perc = perc, 
+                                    beta = beta)
         
         if regularized:
             model.set_regularization_params(regul_dict)
@@ -230,7 +259,7 @@ if __name__ == "__main__":
         print('... training model ... ')
         model.train_model()
 
-        topn = [1]
+        topn = [1, 3, 5]
 
         with open(TSV_path, 'a') as out:
             out.write('-------------------------------------')
