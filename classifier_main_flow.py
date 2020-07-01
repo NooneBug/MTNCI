@@ -1,5 +1,5 @@
-# from MTNCI.MTNCI import ClassifierMTNCI
-from MTNCI.MTNCI import SingleClassifierMTNCI as ClassifierMTNCI
+from MTNCI.MTNCI import ClassifierMTNCI
+# from MTNCI.MTNCI import SingleClassifierMTNCI as ClassifierMTNCI
 # from MTNCI import LopezLike as ShimaokaMTNCI
 import torch
 from MTNCI.DatasetManager import ClassifierDataManager as DatasetManager
@@ -40,8 +40,8 @@ class argClass():
 # lopez_data = torch.load('../figet-hyperbolic-space/data/prep/single_ontonotes/data.pt')
 # word2vec = torch.load('../figet-hyperbolic-space/data/prep/single_ontonotes/word2vec.pt')
 
-# lopez_data = torch.load('../figet-hyperbolic-space/data/prep/crowd-wordnet/data.pt')
-# word2vec = torch.load('../figet-hyperbolic-space/data/prep/crowd-wordnet/word2vec.pt')
+lopez_data = torch.load('../figet-hyperbolic-space/data/prep/crowd-wordnet/data.pt')
+word2vec = torch.load('../figet-hyperbolic-space/data/prep/crowd-wordnet/word2vec.pt')
 
 # lopez_data = torch.load('../figet-hyperbolic-space/data/prep/crowd-wordnet-no-coarse/data.pt')
 # word2vec = torch.load('../figet-hyperbolic-space/data/prep/crowd-wordnet-no-coarse/word2vec.pt')
@@ -49,36 +49,36 @@ class argClass():
 # lopez_data = torch.load('../figet-hyperbolic-space/data/prep/crowd-wordnet-ultra-only/data.pt')
 # word2vec = torch.load('../figet-hyperbolic-space/data/prep/crowd-wordnet-ultra-only/word2vec.pt')
 
-lopez_data = torch.load('../figet-hyperbolic-space/data/prep/lopez_covid/data.pt')
-word2vec = torch.load('../figet-hyperbolic-space/data/prep/lopez_covid/word2vec.pt')
+# lopez_data = torch.load('../figet-hyperbolic-space/data/prep/lopez_covid/data.pt')
+# word2vec = torch.load('../figet-hyperbolic-space/data/prep/lopez_covid/word2vec.pt')
 
-
-# losses_dict = {
-#     'hyperbolic-train': LOSSES['multilabel_Average_Poincare'],
-#     'hyperbolic-val': LOSSES['multilabel_Average_Poincare'],
-#     'distributional': LOSSES['multilabel_Average_Cosine']
-#     # 'distributional': LOSSES['multilabel_Minimum_Cosine'],
-#     # 'hyperbolic-train': LOSSES['multilabel_Minimum_Poincare'],
-#     # 'hyperbolic-val': LOSSES['multilabel_Minimum_Poincare']
-# }
-
-# metrics_dict = {
-#     # 'distributional': LOSSES['multilabel_Minimum_Cosine'],
-#     'distributional': LOSSES['multilabel_Average_Cosine'],
-#     # 'hyperbolic': LOSSES['multilabel_Minimum_Poincare'],
-#     'hyperbolic': LOSSES['multilabel_Average_Poincare']
-# }
 
 losses_dict = {
-    'hyperbolic-train': LOSSES['hyperbolic_distance'],
-    'hyperbolic-val': LOSSES['hyperbolic_distance'],
-    'distributional': LOSSES['cosine_dissimilarity']
+    # 'hyperbolic-train': LOSSES['multilabel_Average_Poincare'],
+    # 'hyperbolic-val': LOSSES['multilabel_Average_Poincare'],
+    # 'distributional': LOSSES['multilabel_Average_Cosine']
+    'distributional': LOSSES['multilabel_Minimum_Cosine'],
+    'hyperbolic-train': LOSSES['multilabel_Minimum_Poincare'],
+    'hyperbolic-val': LOSSES['multilabel_Minimum_Poincare']
 }
 
 metrics_dict = {
-    'distributional': LOSSES['cosine_dissimilarity'],
-    'hyperbolic': LOSSES['hyperbolic_distance']
+    'distributional': LOSSES['multilabel_Minimum_Cosine'],
+    # 'distributional': LOSSES['multilabel_Average_Cosine'],
+    'hyperbolic': LOSSES['multilabel_Minimum_Poincare'],
+    # 'hyperbolic': LOSSES['multilabel_Average_Poincare']
 }
+
+# losses_dict = {
+#     'hyperbolic-train': LOSSES['hyperbolic_distance'],
+#     'hyperbolic-val': LOSSES['hyperbolic_distance'],
+#     'distributional': LOSSES['cosine_dissimilarity']
+# }
+
+# metrics_dict = {
+#     'distributional': LOSSES['cosine_dissimilarity'],
+#     'hyperbolic': LOSSES['hyperbolic_distance']
+# }
 
 
 
@@ -93,8 +93,8 @@ out_spec = [{'manifold':'euclid', 'dim':[256, 10]},
             {'manifold':'poincare', 'dim':[512, 256, 10]}]
 
 
-NAME = 'covid_classifier_beta_10'
-# NAME = 'wordnet_ultra_only_average_100'
+# NAME = 'covid_classifier_'
+NAME = 'DS_minimum'
 # NAME = 'prova'
 
 beta = 10
@@ -107,8 +107,8 @@ regul_dict = {'negative_sampling': 0, 'mse': 50, 'distance_power':1}
 
 
 tensorboard_run_ID = NAME
-results_path = 'results/covid/' + NAME + '.txt'
-TSV_path = 'results/covid_export/export_' + NAME + '.txt'
+results_path = 'results/wordnet/' + NAME + '.txt'
+TSV_path = 'results/wordnet_export/export_' + NAME + '.txt'
 
 lr = 1e-3
 
@@ -127,21 +127,23 @@ SOURCE_FILES_PATH = '/datahdd/vmanuel/MTNCI_datasets/source_files/'
 # SOURCE_FILES_PATH = '../source_files/'
 
 # type_embeddings='../figet-hyperbolic-space/data/type-embeds/ontonotes-clean.pth'
-# type_embeddings='../poincare-embeddings/chk/lopez_wordnet.pth.best'
-# PATH_TO_HYPERBOLIC_EMBEDDING = type_embeddings
+type_embeddings='../poincare-embeddings/chk/lopez_wordnet.pth.best'
+PATH_TO_HYPERBOLIC_EMBEDDING = type_embeddings
 
 
-EMBEDDING_PATH = './covid/models/'
-PATH_TO_HYPERBOLIC_EMBEDDING = EMBEDDING_PATH + 'covid.pth.best'
-PATH_TO_DISTRIBUTIONAL_EMBEDDING = EMBEDDING_PATH + 'type2vec_cleaned'
+# EMBEDDING_PATH = './covid/models/'
+# PATH_TO_HYPERBOLIC_EMBEDDING = EMBEDDING_PATH + 'covid.pth.best'
+# PATH_TO_DISTRIBUTIONAL_EMBEDDING = EMBEDDING_PATH + 'type2vec_cleaned'
 
 
 
 # type_embeddings='../figet-hyperbolic-space/data/type-embeds/ontonotes_type2vec_cleaned'
 # type_embeddings='../figet-hyperbolic-space/data/type-embeds/freq-cooc-sym-euclid-10dim.bin'
+type_embeddings='../figet-hyperbolic-space/data/type-embeds/distant_supervision_dev'
+
 
 nickel = False
-# PATH_TO_DISTRIBUTIONAL_EMBEDDING = type_embeddings
+PATH_TO_DISTRIBUTIONAL_EMBEDDING = type_embeddings
 
 CONCEPT_EMBEDDING_PATHS = [PATH_TO_DISTRIBUTIONAL_EMBEDDING, 
                            PATH_TO_HYPERBOLIC_EMBEDDING]

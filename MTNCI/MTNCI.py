@@ -2068,10 +2068,10 @@ class ClassifierMTNCI(ChoiMTNCI):
         regression_vectors = super().forward(input)
 
         shimaoka_vector = self.get_shimaoka_output(input)
-        # common_output = self.common_network(shimaoka_vector)
+        common_output = self.common_network(shimaoka_vector)
 
-        # classifier_input = torch.cat((regression_vectors[0], regression_vectors[1], common_output), dim = 1)
-        classifier_input = torch.cat((regression_vectors[0], regression_vectors[1]), dim = 1)
+        classifier_input = torch.cat((regression_vectors[0], regression_vectors[1], common_output), dim = 1)
+        # classifier_input = torch.cat((regression_vectors[0], regression_vectors[1]), dim = 1)
 
         classifier_output = self.leaky_relu(self.classifierLayer_1(classifier_input))
         classifier_output = self.sigmoid(self.classifierLayer_2(classifier_output))
